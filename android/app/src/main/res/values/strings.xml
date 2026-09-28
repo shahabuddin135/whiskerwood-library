@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Whiskerwood Library</string>
+    <string name="title_activity_main">Whiskerwood Library</string>
+    <string name="package_name">com.whiskerwood.library</string>
+    <string name="custom_url_scheme">com.whiskerwood.library</string>
+</resources>

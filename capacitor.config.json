@@ -1,0 +1,32 @@
+{
+  "appId": "com.whiskerwood.library",
+  "appName": "Whiskerwood Library",
+  "webDir": "dist",
+  "backgroundColor": "#f3c9a3",
+  "android": {
+    "backgroundColor": "#f3c9a3",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "backgroundColor": "#f3c9a3",
+    "contentInset": "never"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "initialViewportFitValueHint": "cover"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#f3c9a3",
+      "showSpinner": false
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_whiskerwood",
+      "iconColor": "#d9774b"
+    }
+  }
+}
