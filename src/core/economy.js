@@ -1,6 +1,7 @@
 // Pure economy math. No DOM access so it can run inside the Node balance simulator.
 import { ROOMS, MILESTONES, LIMITS, GROWTH, DECOR, BOOKS, BOOK_BONUS, SET_BONUS } from '../data/rooms.js';
 import { branchInfo } from '../data/branches.js';
+import { furnitureBonus } from '../data/furniture.js';
 
 export const QUILL_BONUS = 0.1; // +10% income per Golden Quill
 export const BOOK_MILESTONES = 5; // the first 5 milestones (Lv 10/25/50/100/150) each deliver a book
@@ -46,7 +47,8 @@ export function permanentMult(state) {
   return (1 + QUILL_BONUS * (state.quills || 0))
     * branchInfo(state.branch || 0).mult
     * (1 + REP_BONUS * ((state.rep || 1) - 1))
-    * Math.pow(2, state.shop?.perm || 0);
+    * Math.pow(2, state.shop?.perm || 0)
+    * (1 + furnitureBonus(state.furniture?.owned));
 }
 
 // Timed boosts (ads, royal visits). Returns multiplier for room i (or global when i == null).

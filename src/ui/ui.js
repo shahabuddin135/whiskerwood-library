@@ -30,6 +30,7 @@ export class UI {
     this.thief = null;
     this.seasonChip = h('<div class="season-chip"></div>');
     document.body.appendChild(this.seasonChip);
+    this.seasonChip.addEventListener('click', () => { if (this.game.festival()) { sfx.open(); this.screens.festival(); } });
     this.bind();
     this.listen();
     this.applySettings();
@@ -69,7 +70,7 @@ export class UI {
     on('#cheesePill', () => { sfx.open(); this.screens.shop(); });
     on('#repBtn', () => { sfx.open(); this.screens.reputation(); });
     on('#coinPill', () => { sfx.tap(); toast(`Lifetime coins earned: ${fmt(this.game.s.totalEarned)}`); });
-    on('#quest', () => this.questTap());
+    on('#quest', (e) => this.questTap(e));
     on('#zoomIn', () => { sfx.tap(); this.world.zoomBy(1.35); });
     on('#zoomOut', () => { sfx.tap(); this.world.zoomBy(1 / 1.35); });
     on('#zoomFit', () => { sfx.tap(); this.world.resetZoom(); });
@@ -107,6 +108,7 @@ export class UI {
       flyTo(centerOf($('#repBtn')), $('#cheesePill'), Math.min(8, 2 + cheese), 'cheese');
       $('#repBtn').animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35)' }, { transform: 'scale(1)' }], 500);
     });
+    g.on('buy', ({ i, track }) => this.world.chatter.react(i, track.startsWith('decor') ? 'decor' : track));
     g.on('questReady', () => { sfx.sparkle(); haptic('light'); });
     g.on('jarFull', (full) => {
       if (full && !this.jarFullNotified) { this.jarFullNotified = true; toast('🫙 The coin jar is full — tap it to collect!'); }
@@ -144,9 +146,19 @@ export class UI {
     });
   }
 
-  questTap() {
+  async questTap(e) {
     const g = this.game;
     const p = g.questProgress();
+    if (p.done && e?.target?.closest?.('.q-ad')) {
+      sfx.tap();
+      if (!g.offerReady('questX2', 10)) return;
+      if (await Ads.rewarded('quest_x2')) {
+        g.s.stats.adsWatched++; g.useOffer('questX2', 120);
+        const got = g.claimQuest(2);
+        if (got) { this.screens.celebrate(got, centerOf($('#quest'))); bigText('Double reward!'); }
+      }
+      return;
+    }
     if (p.done) {
       const got = g.claimQuest();
       if (got) { this.screens.celebrate(got, centerOf($('#quest'))); toast('Quest complete! 📜', 'gold'); }
@@ -183,7 +195,7 @@ export class UI {
     if (res.chest) {
       setTimeout(() => {
         bigText('Task Chest! 🎁');
-        this.screens.celebrate(res.chest, from);
+        this.screens.taskChest(res.chest);
         toast('All tasks done — here are 3 fresh ones!', 'gold');
       }, 500);
     }
@@ -223,6 +235,21 @@ export class UI {
     if (sp.type === 'celeb') this.screens.celeb(i, sp.name);
     else if (sp.type === 'royal') this.screens.royal(i, sp.name);
     else if (sp.type === 'author') this.screens.author(i, sp.name);
+  }
+
+  // Baroness Clawdia scared the readers off: offer to win them back.
+  catEscaped(i) {
+    const g = this.game;
+    if (this.busy() || !g.offerReady('cat', 4)) { toast('😿 The readers were too scared… tap the cat next time!'); return; }
+    const amt = g.rewardCoins(90);
+    this.banner({
+      icon: '😿', title: 'The readers ran off!', text: `Clawdia scared everyone out of ${ROOMS[i].name}.`, btn: 'Oh no', ms: 9000,
+      extraBtn: { label: 'Cocoa for all', onClick: async () => { if (await Ads.rewarded('second_chance_cat')) { g.s.stats.adsWatched++; g.useOffer('cat'); g.earn(amt); this.flyCoins({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, 10); toast(`☕ Free cocoa brought everyone back! +${fmt(amt)} coins`, 'gold'); } } },
+    });
+  }
+
+  giftArrived() {
+    this.banner({ icon: '🎁', title: 'A gift on the doorstep!', text: 'Somebody left a mystery box by the library door.', btn: 'Look', ms: 8000, onClick: () => { this.world.panTo(0, true, 236); setTimeout(() => this.screens.giftBox(), 500); } });
   }
 
   fairStarted(sec) {
@@ -283,7 +310,12 @@ export class UI {
         const g = this.game; const lost = g.s.jar * 0.2;
         g.s.jar -= lost;
         sfx.error();
-        toast(`🦹 Rattigan snatched ${fmt(lost)} coins from the jar! Catch him next time!`);
+        if (lost > 0 && g.offerReady('thief', 4)) {
+          this.banner({
+            icon: '🦹', title: 'Rattigan got away!', text: `He snatched ${fmt(lost)} coins from the jar.`, btn: 'Oh well', ms: 9000, urgent: true,
+            extraBtn: { label: 'Get it back', onClick: async () => { if (await Ads.rewarded('second_chance_thief')) { g.s.stats.adsWatched++; g.useOffer('thief'); g.earn(lost); this.flyCoins(centerOf($('#jarBtn')), 12); toast(`🚓 The Mouse Police caught him! +${fmt(lost)} coins back`, 'gold'); } } },
+          });
+        } else toast(`🦹 Rattigan snatched ${fmt(lost)} coins from the jar! Catch him next time!`);
       }
     } else if (th.state === 'stole') { th.t2 += dt; th.x -= 260 * dt; if (th.x < -100) this.endThief(); }
     else if (th.state === 'caught') { th.t2 += dt; if (th.t2 > 0.7) this.endThief(); }
@@ -302,12 +334,12 @@ export class UI {
   doPrestige() {
     const g = this.game;
     this.sheet.close();
-    const gained = g.prestige();
-    if (!gained) return;
+    const res = g.prestige();
+    if (!res) return;
     this.world.resetForBranch();
     sfx.fanfare(); haptic('heavy');
-    bigText(`+${gained} Golden Quills!`);
-    setTimeout(() => toast(`Welcome to ${g.branch().name}! 🌿`, 'gold'), 900);
+    bigText(`+${res.gained} Golden Quills!`);
+    setTimeout(() => this.screens.arrival(res), 900);
     this.shownCoins = 0;
     g.save();
     this.native?.askReview?.('prestige');
@@ -349,7 +381,9 @@ export class UI {
     $('#qText').textContent = q ? q.text : '';
     $('#qBar').style.width = `${(p.cur / p.target) * 100}%`;
     const rw = q?.reward || {};
-    $('#qReward').innerHTML = p.done ? 'Claim!' : rw.cheese ? `<span class="ico ico-cheese" style="width:16px;height:16px"></span>${rw.cheese}` : `<span class="ico ico-coin" style="width:16px;height:16px"></span>${rw.coins ? fmt(rw.coins) : ''}`;
+    const qAd = p.done && s.questIdx >= 4 && g.offerReady('questX2', 10) ? '<span class="q-ad">📺×2</span>' : '';
+    const qHtml = p.done ? `${qAd}<span class="q-claim">Claim!</span>` : rw.cheese ? `<span class="ico ico-cheese" style="width:16px;height:16px"></span>${rw.cheese}` : `<span class="ico ico-coin" style="width:16px;height:16px"></span>${rw.coins ? fmt(rw.coins) : ''}`;
+    if (this.qHtml !== qHtml) { this.qHtml = qHtml; $('#qReward').innerHTML = qHtml; } // only when it changes, so taps land
     $('#quest').classList.toggle('ready', p.done);
 
     // jar
@@ -370,8 +404,15 @@ export class UI {
 
     const season = this.world.season; const wx = this.world.ambient.weather;
     const weatherIcon = wx.kind === 'rain' ? ' 🌧️' : wx.kind === 'snow' ? ' 🌨️' : wx.kind === 'cloudy' ? ' ☁️' : wx.rainbow > 0 ? ' 🌈' : '';
-    const chip = `${season.icon} ${season.name}${weatherIcon}`;
+    const fest = g.festival();
+    const chip = `${fest ? `${fest.icon} ${fest.name} · ` : ''}${season.icon} ${season.name}${weatherIcon}`;
     if (this.seasonChip.textContent !== chip) this.seasonChip.textContent = chip;
+    this.seasonChip.classList.toggle('fest', !!fest);
+    this.seasonChip.classList.toggle('has-gift', g.festGiftReady());
+    // mystery gift on the doorstep
+    const giftDue = g.giftDue();
+    if (giftDue && !this.giftNotified && !this.busy()) { this.giftNotified = true; this.giftArrived(); }
+    if (!giftDue) this.giftNotified = false;
 
     if (this.sheet.isOpen) this.sheet.update();
     this.renderChips();

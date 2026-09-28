@@ -1,6 +1,7 @@
 // Sky, day/night cycle, parallax countryside, garden, underground vault, roof and construction.
 import { W, BX0, BX1, FH, GROUND_H, ROOF_H, IX, IW, floorTop } from './layout.js';
 import { rr, fillRR, ell, circ, shade, rng, star, drawMouse, coinIcon, drawCheese } from './draw.js';
+import { drawFoundation, drawLawnDetail, drawLandscape } from './landscape.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 export const DAY_CYCLE = 720; // seconds for a full day in game
@@ -239,10 +240,9 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   if (winter) { const Rs = rng(4); for (let k = 0; k < 20; k++) ell(ctx, L + Rs() * (R - L), 10 + Rs() * 75, 8 + Rs() * 14, 1.6, tint('#ffffff')); }
   // path
   ctx.fillStyle = tint(winter ? '#e8e1d6' : '#d9c29a'); ctx.beginPath(); ctx.moveTo(190, 0); ctx.quadraticCurveTo(170, 50, 205, 90); ctx.lineTo(250, 90); ctx.quadraticCurveTo(222, 50, 232, 0); ctx.closePath(); ctx.fill();
-  // foundation
-  ctx.fillStyle = tint('#9d9486'); ctx.fillRect(BX0 - 4, -2, BX1 - BX0 + 8, 10);
-  ctx.fillStyle = tint('#857c70'); for (let x = BX0; x < BX1; x += 22) ctx.fillRect(x, -2, 1.2, 10);
-  if (winter) { ctx.fillStyle = '#f7fafc'; ctx.fillRect(BX0 - 5, -3.5, BX1 - BX0 + 10, 2.5); }
+  // foundation (each branch's building sits on its own)
+  drawFoundation(ctx, scene, tint, winter);
+  drawLawnDetail(ctx, scene, season, tint, L, R);
 
   // flowers (seasonal)
   const Rn = rng(21);
@@ -284,12 +284,8 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   }
   ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(284, 20, 3, 26); fillRR(ctx, 276, 8, 20, 13, 5, tint('#4f7cac')); ctx.fillStyle = tint('#e0404f'); ctx.fillRect(292, 4, 2, 9); ctx.fillRect(292, 4, 6, 3);
 
-  // theme feature on the right of the garden
-  if (scene === 'meadow') { [[320, 40], [352, 58], [390, 36]].forEach(([x, y]) => { ell(ctx, x, y, 13, 9, tint('#e8c465')); ctx.strokeStyle = tint('#c9a13e'); ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(x, y, 9, 6, 0, 0, Math.PI * 2); ctx.stroke(); }); drawScarecrow(ctx, 420, 40, t, tint); }
-  if (scene === 'windmill') drawWindmill(ctx, 360, 52, t, 0.75, tint);
-  if (scene === 'cove') { ctx.fillStyle = tint('#f0dcae'); ctx.fillRect(300, 40, R - 300, 50); ctx.fillStyle = tint('#6fb3d6'); ctx.fillRect(330, 62, R - 330, 28); ctx.fillStyle = 'rgba(255,255,255,0.6)'; for (let k = 0; k < 6; k++) ctx.fillRect(334 + ((k * 23 + t * 8) % 100), 64 + (k % 3) * 7, 9, 1.2); drawBoat(ctx, 380 + Math.sin(t * 0.5) * 8, 70, tint); }
-  if (scene === 'pond') { [[330, 30], [360, 45]].forEach(([x, y], k) => { const bob = Math.sin(t * 2 + k) * 1; ell(ctx, x, y + bob, 7, 4, tint('#fbf6ea')); circ(ctx, x + 6, y - 4 + bob, 3.2, tint('#fbf6ea')); ctx.fillStyle = tint('#f2a13e'); ctx.fillRect(x + 8.5, y - 4.5 + bob, 3, 1.5); }); drawWillow(ctx, 405, 30, t, tint); }
-  if (scene === 'castle') { fillRR(ctx, 330, -10, 50, 60, 2, tint('#b9b3c9')); for (let k = 0; k < 5; k++) ctx.fillRect(330 + k * 11, -18, 6, 9); fillRR(ctx, 346, 20, 18, 30, 9, tint('#4b3f58')); ctx.fillStyle = tint('#7b2d8b'); ctx.fillRect(354, -44, 1.5, 28); ctx.beginPath(); ctx.moveTo(355.5, -44); ctx.lineTo(372 + Math.sin(t * 3) * 2, -38); ctx.lineTo(355.5, -32); ctx.fill(); }
+  // each branch's garden landscaping on the right of the garden
+  drawLandscape(ctx, scene, t, tod, season, tint, L, R);
 
   // fireflies at night
   if (dark > 0.35 && !winter) {
@@ -332,14 +328,8 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   drawMouse(ctx, vx + vw - 58, vy + vh - 4, { fur: '#8f7f73', belly: '#d9cdc2', dir: -1, pose: 'sit', t: t * 0.3, sleep: true, hat: 'bobble', hatCol: '#4f7cac', noShadow: true });
   ctx.fillStyle = '#fff'; ctx.font = `600 7px ${FONT}`; ctx.textAlign = 'center';
   ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 2); ctx.fillText('z', vx + vw - 52 + Math.sin(t) * 2, vy + vh - 34 - ((t * 6) % 10)); ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,240,200,0.8)'; ctx.font = `600 8px ${FONT}`; ctx.fillText('The Cheese & Coin Vault', vx + vw / 2, vy + 20);
-}
-
-function drawScarecrow(ctx, x, y, t, tint) {
-  ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(x - 1, y - 30, 2.4, 34); ctx.fillRect(x - 12, y - 22, 24, 2);
-  fillRR(ctx, x - 7, y - 24, 14, 14, 3, tint('#c0504d'));
-  circ(ctx, x, y - 30, 5, tint('#e8c465'));
-  ell(ctx, x, y - 34, 9, 2, tint('#9c7b4f')); ctx.fillStyle = tint('#9c7b4f'); ctx.fillRect(x - 4, y - 40, 8, 6);
+  fillRR(ctx, vx + vw / 2 - 52, vy + 12, 104, 13, 6, 'rgba(90,60,35,0.85)');
+  ctx.fillStyle = '#fff3dc'; ctx.font = `600 8px ${FONT}`; ctx.textBaseline = 'middle'; ctx.fillText('The Cheese & Coin Vault', vx + vw / 2, vy + 18.8); ctx.textBaseline = 'alphabetic';
 }
 
 /* ---------------- roof ---------------- */

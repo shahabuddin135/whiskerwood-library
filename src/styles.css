@@ -374,7 +374,7 @@ body.sheet-open #quest, body.sheet-open #boostChips, body.sheet-open .rail, body
 .task.done .t-num::after { content: ' ✓'; }
 .task.claimed { opacity: 0.45; }
 .tasks .chest { flex: none; width: 38px; height: 32px; border-radius: 12px; background: rgba(255, 247, 232, 0.94); border: 2px solid #e6c897; font-size: 17px; position: relative; }
-.tasks .chest small { position: absolute; right: 1px; bottom: -1px; font-size: 9px; font-weight: 700; }
+.tasks .chest small { position: absolute; right: -5px; bottom: -6px; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; border-radius: 6px; background: #fff7e8; border: 1.5px solid #e6c897; }
 
 /* ---------- zoom ---------- */
 .zoom-ctl { position: fixed; right: 6px; bottom: calc(var(--safe-bottom) + 142px); z-index: 11; display: flex; flex-direction: column; gap: 5px; }
@@ -410,7 +410,9 @@ body.sheet-open .zoom-ctl { opacity: 0; pointer-events: none; }
 .review-quote { font-family: var(--hand); font-size: 17px; margin: 6px 0; }
 .review-tips { text-align: left; font-size: 13px; background: #fff8ea; border: 2px solid #eed7ae; border-radius: 12px; padding: 8px 10px; margin-top: 8px; }
 .season-chip { position: fixed; left: 6px; bottom: calc(var(--safe-bottom) + 142px); z-index: 11; padding: 4px 10px; border-radius: 12px; background: rgba(255, 250, 240, 0.9); border: 2px solid #e6c897; font-size: 12px; font-weight: 700; }
-body.sheet-open .season-chip { opacity: 0; }
+body.sheet-open .season-chip { opacity: 0; pointer-events: none; }
+/* toasts move below the dialog while one is open, so they never cover its title */
+body.modal-open #toasts { top: auto; bottom: calc(var(--safe-bottom) + 100px); }
 
 /* ---------- new book card ---------- */
 .book-toast {
@@ -423,3 +425,17 @@ body.sheet-open .season-chip { opacity: 0; }
 .book-toast .bt-cover .book { font-size: 7px; padding: 4px 3px 3px 5px; }
 .book-toast small { color: var(--green-dk); font-weight: 700; }
 @keyframes slideIn { from { transform: translateX(120%) rotate(8deg); } }
+
+/* ---------- book details (album) ---------- */
+.book-detail { display: none; margin: 8px 0 4px; padding: 8px 10px; border-radius: 12px; background: #fff8ea; border: 2px solid #eed7ae; font-size: 13px; text-align: left; }
+
+/* ---------- quest ×2 ad chip ---------- */
+.q-ad { background: linear-gradient(#a283f0, var(--ad)); color: #fff; padding: 4px 6px; border-radius: 10px; box-shadow: 0 2px 0 var(--ad-dk); margin-right: 4px; font-size: 10.5px; animation: pop 1.3s infinite; }
+.quest.ready .q-text { font-size: 12.5px; }
+.quest.ready .q-reward { background: none; padding: 0; box-shadow: none; color: inherit; text-shadow: none; }
+.quest.ready .q-claim { background: var(--green); color: #fff; padding: 5px 9px; border-radius: 10px; box-shadow: 0 2px 0 var(--green-dk); }
+/* ---------- festival season chip ---------- */
+.season-chip.fest { pointer-events: auto; cursor: pointer; background: linear-gradient(#fff8e0, #ffe9b0); border-color: #f2c14e; }
+.season-chip.has-gift::after { content: ''; position: absolute; top: -5px; right: -5px; width: 13px; height: 13px; border-radius: 50%; background: var(--red, #e0605a); border: 2px solid #fff; }
+.btn-stack { display: flex; flex-direction: column; gap: 5px; flex: none; }
+.btn-stack .btn { min-height: 34px; font-size: 13px; }

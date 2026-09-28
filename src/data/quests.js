@@ -103,3 +103,6 @@ export const SHOP = {
   adCheese: 5,
   adCheeseDaily: 5,
 };
+
+// The mystery gift box that turns up on the doorstep (open it with an optional ad, or just peek).
+export const GIFT = { firstSec: 240, everySec: [420, 720], daily: 6, coinsSec: 900, cheese: [4, 8], furnitureChance: 0.2, bookChance: 0.3, peekSec: 45 };

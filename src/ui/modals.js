@@ -42,6 +42,7 @@ export function openModal(opts) {
   back.addEventListener('click', (e) => { if (e.target === back && opts.dismissable !== false) { sfx.close(); closeModal(); } });
   $('#modalRoot').appendChild(back);
   current = { back, opts, handle };
+  document.body.classList.add('modal-open');
   opts.onOpen?.(handle);
   return handle;
 }
@@ -51,6 +52,7 @@ export function closeModal(silent = false) {
   const c = current;
   current = null;
   c.back.remove();
+  document.body.classList.remove('modal-open');
   c.opts.onClose?.();
   if (!silent && queue.length) setTimeout(() => { if (!current && queue.length) openModal(queue.shift()); }, 180);
 }

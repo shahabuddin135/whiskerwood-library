@@ -30,6 +30,8 @@ Debug in the browser console:
 - `WWL.world.events.start('cat' | 'worms' | 'lost' | 'critic' | 'fair' | 'thief')` starts an event.
 - `WWL.world.seasonOverride = 3` switches to winter.
 - `WWL.world.ambient.weather.left = 0` changes the weather now.
+- `WWL.world.debugFestival('ramadan')` previews a festival (`null` turns it off).
+- `WWL.game.s.branch = 3; WWL.world.resetForBranch()` shows another branch's building.
 
 ---
 
@@ -48,6 +50,9 @@ Debug in the browser console:
    | ✨ Décor ×5 | +20–40% each | rug, lamps (glow at night), fern, painting and a unique centerpiece |
 4. **Build new floors.** There are 10 themed floors (Cozy Nook → Storybook Corner → Tea & Crumbs Café → Adventure Map Room → Mystery Attic → Poetry Greenhouse → Stargazer Observatory → Royal Archive → Moonlit Music Hall → Grand Atrium). Each has its own wallpaper, seats, centerpiece, genre and 5 collectible books. Construction timers show builder mice at work.
 5. **New Branch (prestige):** move the library to a new countryside location, earning **Golden Quills** (+10% income each, forever). The five locations are Meadow Burrow → Windmill Hill → Lighthouse Cove → Willow Pond → Moonlit Castle, each with its own scenery (windmill, lighthouse beam at night, pond, castle…).
+   - **The whole library moves with you:** every floor you built comes along with its seats, shelves, librarian, décor and furniture. Only the Book Collection levels and coins start fresh, so a new branch feels like a fresh start in a new home, not a restart. The moving van needs a 20-minute rest between moves.
+   - **Every branch has its own library building and garden:** the red-tiled cottage (Meadow Burrow), a thatched farmhouse with its own windmill, barley rows and a hay cart (Windmill Hill), a blue clapboard house with a lighthouse lamp, palms, a beach and a sandcastle (Lighthouse Cove), a mossy boathouse with paper lanterns, weeping willows, a lily pond and a red bridge (Willow Pond), and a stone keep with turrets, banners, pines and a fountain courtyard (Moonlit Castle).
+   - A welcome screen shows what came along, with an optional 📺 housewarming party (+cheese).
 
 ### Engagement systems
 - **Special guests**, about every 1–2 minutes, glowing gold with a "Visit" banner. Tap them before they leave:
@@ -60,7 +65,10 @@ Debug in the browser console:
 - **Pet a mouse:** hearts, a squeak and a few coins.
 - **Quests:** 15 hand-written onboarding quests with a pointing-hand tutorial, then endless generated quests that always pick a goal reachable in minutes.
 - **Reputation level:** every upgrade gives XP, and each level gives golden cheese and +2% income.
-- **Book album:** 50 parody books (Common → Legendary). Each gives +10% on its floor, and a complete set gives ×2.
+- **Book album:** 50 parody books (Common → Legendary), each with a parody author, a blurb and a one-line review (tap a book in the Album or on the floor sheet). Each gives +10% on its floor, and a complete set gives ×2.
+- **Parody guests:** celebrities (Taylor Swiss, Mouse Jagger, Elvis Presqueak, Lady Gouda, Oprah Whiskfrey, Gordon Ramsqueak…), royals (Queen Brie-zabeth, Napoleon Brie-naparte, Cleo-parmesan…) and authors who sign on their genre's floor (Agatha Crustie, Dr. Squeuss, Jules Vermin, William Squeakspeare, J.R.R. Tolkmouse…). Each says a catchphrase when they arrive.
+- **Furniture (Shop):** 60+ pieces for seven spots on every floor (rug, lamps, painting, wall, under the window, desk and ceiling), bought once with golden cheese and **kept forever**. Common/Rare/Epic/Legendary pieces add +2/4/8/15% income. Each branch sells two local finds, and festivals bring limited specials. Place or swap them from the floor sheet (🔨 Upgrade → Furniture).
+- **Floor interiors:** every floor also has its own built-in details, like the coat hooks and sampler in the Cozy Nook, the height chart and ABC bunting in Storybook Corner, the copper pans in the café, the WANTED poster and evidence board in the Mystery Attic, and the violin and sheet music in the Music Hall.
 - **Daily gifts:** a 7-day streak that resets if you miss a day. **Lucky wheel:** one free spin every 6 hours.
 - **Offline earnings** when you come back. **Story Hour:** ×2 income, stackable up to 4 hours.
 - **Juice:** coins fly into the counter, purchase sounds climb in pitch when chained, milestone confetti, haptics, a hold-to-buy button, and a coin pile in the underground vault that grows with your wealth.
@@ -78,6 +86,9 @@ Debug in the browser console:
 | ❓ **Book requests** | A reader shows a thought bubble with the book they want | Tap within 11 s for a tip and hearts |
 | 🌧️ **Weather** | Rainy days (×1.5) and snow days (×1.3) bring more readers, and a rainbow follows the rain | |
 
+### Festivals & holidays ([src/data/festivals.js](src/data/festivals.js), [src/world/festive.js](src/world/festive.js))
+Real-calendar festivals decorate the whole library: lights along the roof, something festive in every window, a garden piece by the path and a little sky mood. There's festive chatter, limited Shop specials and a daily festival gift (tap the season chip, 📺 ×2). Festivals include Ramadan (lanterns, a crescent moon and warm evenings), Eid, Christmas, New Year (fireworks), Halloween, Book Lovers' Day, Book Week, the library's birthday, a Summer Reading Festival and the Harvest Festival. Ramadan and Eid dates come from a table (2025–2031). Seasonal festivals hold the weather to match.
+
 ### Seasons & life ([src/world/ambient.js](src/world/ambient.js))
 - **Seasons** change every 24 minutes: spring blossom petals and tulips, summer sunflowers and butterflies, autumn leaves and pumpkins, winter snow with a frozen pond, a skating mouse, a snowman, and snow and icicles on the roof.
 - **Around the library:** passers-by walk to the door (with umbrellas in the rain), a postmouse cycles past, frogs hop between lily pads, ducks swim, a snail crawls by, and two big trees change with the seasons.
@@ -86,7 +97,7 @@ Debug in the browser console:
 
 ### Story, chatter & quick goals
 - **Story chapters** ([src/data/story.js](src/data/story.js)) with drawn character portraits: Grandma Mimsy, Pip the apprentice, Mayor Gruyère, Chef Gustavo, Queen Mozzarella, Monsieur Fromage, Sneaky Rattigan and the villain, Baroness Clawdia. The arc ends when the Golden Crumb glows and Clawdia admits she only wanted someone to read to her.
-- **Chatter** ([src/world/chatter.js](src/world/chatter.js)): speech bubbles that react to each floor's genre, the weather, season, time of day and events, plus tips from the librarian.
+- **Chatter** ([src/world/chatter.js](src/world/chatter.js)): speech bubbles that react to each floor's genre, the weather, season, time of day and events, plus tips from the librarian. Readers gossip about parody books, spoil endings, leave strange reviews and terrible recommendations, hold little two-mouse conversations, react when you upgrade or redecorate their floor, and very occasionally notice the giant finger in the sky.
 - **Quick tasks** ([src/data/tasks.js](src/data/tasks.js)): three short goals are always on screen (pet 3 mice, catch a fish, squish 4 worms…). Finish all three to open a reward chest and get three new ones.
 - **Zoom:** pinch, ctrl+scroll or the ＋/－/⤢ buttons (0.5×–2.6×). Drag in any direction when zoomed in.
 
@@ -120,6 +131,14 @@ Every rewarded ad is **opt-in** (the 📺 purple buttons). This keeps you within
 | `wheel_spin` | lucky wheel | bonus spin (6/day) |
 | `daily_x2` | daily gift | double today's gift |
 | `shop_cheese` | shop | +5 golden cheese (5/day) |
+| `quest_x2` | 📺×2 chip on a finished quest (from quest 5, 10/day) | double the quest reward |
+| `task_chest_x2` | task chest (6/day) | a second helping |
+| `gift_box` | a mystery gift on the doorstep every 7–12 min (from quest 7, 6/day); peeking is free | 15 min of coins + cheese, maybe furniture or a book |
+| `second_chance_thief` / `second_chance_cat` | after Rattigan gets away / Clawdia scares the readers (4/day each) | get the stolen coins back / free cocoa brings the readers back |
+| `shop_deal` | the Shop's daily furniture deal (1/day) | half price today |
+| `opening_party` | grand opening of a new floor | ×3 income on that floor for 5 min |
+| `housewarming` | welcome screen after moving | + golden cheese |
+| `festival_gift` | festival gift (season chip or Shop) | double today's gift |
 
 **Interstitials** only appear at natural breaks (after a floor's grand opening), never in the first 3 minutes of a session, never within 4 minutes of another ad, and only after the 4th floor. Tune this in [src/config.js](src/config.js). The "No Break Ads" in-app purchase removes them.
 
@@ -203,7 +222,8 @@ src/
   config.js            ad IDs, ad pacing, privacy URL, IAP switch
   core/                game state & rules (no DOM): economy, game, save, format
   data/                floors, books, visitors, quests, tasks, story, daily/wheel/shop tables, branches
-  world/               canvas renderer: camera + pinch zoom, mouse/cat drawing, room art cache,
+  world/               canvas renderer: camera + pinch zoom, mouse/cat drawing, room art cache (+ furnish.js),
+                       branch buildings (buildings.js) and gardens (landscape.js), festival decor (festive.js),
                        scenery, seasons & weather (ambient.js), events.js, chatter.js, visitor AI, particles
   ui/                  HUD, quick tasks, upgrade sheet, dialogs, story overlay + portraits, tutorial pointer
   audio/               Web Audio setup, procedural waltz (music.js), sound effects (sfx.js)
