@@ -30,6 +30,9 @@ Debug in the browser console:
 - `WWL.world.events.start('cat' | 'worms' | 'lost' | 'critic' | 'fair' | 'thief')` starts an event.
 - `WWL.world.seasonOverride = 3` switches to winter.
 - `WWL.world.ambient.weather.left = 0` changes the weather now.
+- `WWL.world.debugBranch(3)` jumps to a location (0 Meadow … 5 Nimbus Isle).
+- `WWL.world.debugFestival('ramadan')` previews a festival (`null` turns it off).
+- `WWL.world.spawnRegular('squeaky')` brings a regular; `WWL.world.events.startSpoiler(1)` / `startDebate(0)` start the new events.
 
 ---
 
@@ -47,7 +50,40 @@ Debug in the browser console:
    | 👓 Librarian (1–20) | faster checkout | |
    | ✨ Décor ×5 | +20–40% each | rug, lamps (glow at night), fern, painting and a unique centerpiece |
 4. **Build new floors.** There are 10 themed floors (Cozy Nook → Storybook Corner → Tea & Crumbs Café → Adventure Map Room → Mystery Attic → Poetry Greenhouse → Stargazer Observatory → Royal Archive → Moonlit Music Hall → Grand Atrium). Each has its own wallpaper, seats, centerpiece, genre and 5 collectible books. Construction timers show builder mice at work.
-5. **New Branch (prestige):** move the library to a new countryside location, earning **Golden Quills** (+10% income each, forever). The five locations are Meadow Burrow → Windmill Hill → Lighthouse Cove → Willow Pond → Moonlit Castle, each with its own scenery (windmill, lighthouse beam at night, pond, castle…).
+5. **The World Map (prestige):** once the Grand Atrium is built, move the library to the next location and earn **Golden Quills** (+10% income each, forever). Floors and coins start fresh, but everything else comes with you (see *Kept forever* below), and the Map spells out what moves, what's new and what you'll earn before you commit.
+
+### Six locations ([src/data/locations.js](src/data/locations.js))
+Each move is a real upgrade, not a repaint. Every location has its own tower shell, roof, windows, walls, floors, shelves, lamps, desk, wall fixtures, sky, far scenery and grounds. It also brings a host character, a shop with its own keeper, a signature mechanic, three souvenirs and a Passport perk.
+
+| Location | Library | Income | Mechanic | Passport perk (earned on leaving) |
+|---|---|---|---|---|
+| Meadow Burrow | Whiskerwood Library | ×1 | Pond fishing | **Moving Van**: every new location opens with 3 floors built |
+| Lighthouse Cove | The Lighthouse Lending Library | ×1.5 | Messages in bottles wash up (letters + coins) | **Sea Breeze**: offline earnings 80% instead of 60% |
+| Glimmerdeep Caverns | The Glimmerdeep Undercroft | ×2.5 | Glowcap harvest (tap glowing mushrooms) | **Glowcap Jar**: the coin jar holds 50% more |
+| Gearhaven | The Clockwork Athenaeum | ×4 | Book-tube post capsules | **Swift Scaffolds**: floors build twice as fast |
+| Moonlit Castle | The Moonlit Stacks | ×7 | Sir Reginald the bookwyrm, perched on the tower | **Royal Favour**: more special guests, longer decrees |
+| Nimbus Isle | The Nimbus Sky Library | ×12 | The cloud whale drifts past (tap for a gift) | **Tailwind**: +25% Golden Quills on every move |
+
+After Nimbus Isle the road loops back to the meadow at ×10 income (Meadow Burrow II, …).
+
+### Kept forever
+Moving never feels like losing: every one of these carries a permanent income bonus that stacks with quills.
+- **Furniture** ([src/data/furniture.js](src/data/furniture.js)): 97 pieces in 11 slots (rugs, lamps, plants, wall art, shelves, desks, seats, centrepieces, librarian hats, garden pieces, curios). Common/Rare/Epic/Legendary give +3/6/12/25% income. Place them per floor from the floor sheet's **Style** tab; they follow you to every location.
+- **Souvenirs:** three per location, found through that location's mechanic (+5% each).
+- **Trophies:** build all 10 floors in a location (+15% each).
+- **Passport stamps:** the perks in the table above.
+- **Regulars' stories** and **festival books** (below).
+- The **Collection** screen shows all of it, plus the running total of your permanent bonus.
+
+### Regulars ([src/data/regulars.js](src/data/regulars.js))
+Seven recurring characters with name tags (Barnaby Bluffington, Squeaky Spoilsworth, Doris Dogear, Filmore Reel, Professor Footnote, Granny Crumbcake and Tomasina Tome) drop by every few minutes. Tap them to play the next of four short scenes. Finishing a story gives their personal gift (a furniture piece) and +5% income. They follow you to every location.
+
+### Festivals ([src/data/festivals.js](src/data/festivals.js))
+Real-calendar festivals transform the world: Ramadan Nights, Eid, the Winter Festival (Christmas), New Year Lights, Spooky Stories Week (Halloween), Book Lovers' Day (Valentine's), Book Week, the Library Birthday, the Summer Reading Festival and the Harvest Reading Festival. Ramadan and both Eids use a lookup table (2025–2031).
+- **World:** sky tint and evening light, rooftop lights and emblems, window decor, garlands and hanging items in every room, a festival garden piece, particles, and a music flavour (bells, chimes or a spooky layer). Ramadan is deliberately gentle: lanterns, a crescent moon and warm evening light.
+- **Tokens:** glowing festival tokens appear on floors; tap them to collect.
+- **Festival board:** a daily gift (📺 ×2), five festival quests, three limited festival books (+3% income each, forever) and two exclusive furniture pieces, all bought with tokens.
+- Seasonal festivals hold the in-game season to match, and **NPC dialogue** changes for the occasion. Festivals can be switched off in Settings.
 
 ### Engagement systems
 - **Special guests**, about every 1–2 minutes, glowing gold with a "Visit" banner. Tap them before they leave:
@@ -77,6 +113,8 @@ Debug in the browser console:
 | 🎪 **Book Fair** | Bunting on the roof, confetti, all income ×2 and extra visitors | 📺 extend by 3 min |
 | ❓ **Book requests** | A reader shows a thought bubble with the book they want | Tap within 11 s for a tip and hearts |
 | 🌧️ **Weather** | Rainy days (×1.5) and snow days (×1.3) bring more readers, and a rainbow follows the rain | |
+| 📣 **Spoiler alert** | Squeaky Spoilsworth is about to shout a book's ending | Tap to shush them in time, or the floor earns ×0.5 for a while (📺 cookie party undoes it) |
+| 💬 **Book-club debate** | A floor argues "book or movie?", "dog-earing pages: crime or comfort?"… | Pick a side for a reward and a funny outcome |
 
 ### Seasons & life ([src/world/ambient.js](src/world/ambient.js))
 - **Seasons** change every 24 minutes: spring blossom petals and tulips, summer sunflowers and butterflies, autumn leaves and pumpkins, winter snow with a frozen pond, a skating mouse, a snowman, and snow and icicles on the roof.
@@ -84,8 +122,14 @@ Debug in the browser console:
 - **Sky:** flocks of birds, shooting stars at night (tap one for a wish, +3 cheese) and hot-air balloons (tap for a gift).
 - **Background:** a village with glowing windows and chimney smoke, sheep on the hills, and ivy and lanterns growing up the library as it rises.
 
+### A world that talks back
+- **Skits** ([src/data/dialogue.js](src/data/dialogue.js)): two-to-four-line conversations and arguments between readers and the librarian, location-specific skits, and occasional fourth-wall jokes.
+- **Reactions:** readers comment on what you do, such as upgrades, new furniture, a milestone, a full jar, zooming in, idling, spamming the desk bell or petting the same mouse too often.
+- **Little moments** ([src/world/life.js](src/world/life.js)): a book falls off a shelf, someone sneezes or dozes off, a robin/gull/bat/owl visits the window, and live curios (fish tank, orrery, cuckoo clock, crystal ball…) do their thing when tapped.
+- **Parody books:** all 50 album books have an author, a blurb and a one-line review; tap any book in the Collection to read them.
+
 ### Story, chatter & quick goals
-- **Story chapters** ([src/data/story.js](src/data/story.js)) with drawn character portraits: Grandma Mimsy, Pip the apprentice, Mayor Gruyère, Chef Gustavo, Queen Mozzarella, Monsieur Fromage, Sneaky Rattigan and the villain, Baroness Clawdia. The arc ends when the Golden Crumb glows and Clawdia admits she only wanted someone to read to her.
+- **Story chapters** ([src/data/story.js](src/data/story.js)) with drawn character portraits: Grandma Mimsy, Pip the apprentice, Mayor Gruyère, Chef Gustavo, Queen Mozzarella, Monsieur Fromage, Sneaky Rattigan and the villain, Baroness Clawdia. The arc ends when the Golden Crumb glows and Clawdia admits she only wanted someone to read to her. Each location adds an arrival chapter with its host (Captain Barnacle, Madame Delvina Mole, Ada Sprocket, Sir Crumbsworth and Aurora Featherfoot).
 - **Chatter** ([src/world/chatter.js](src/world/chatter.js)): speech bubbles that react to each floor's genre, the weather, season, time of day and events, plus tips from the librarian.
 - **Quick tasks** ([src/data/tasks.js](src/data/tasks.js)): three short goals are always on screen (pet 3 mice, catch a fish, squish 4 worms…). Finish all three to open a reward chest and get three new ones.
 - **Zoom:** pinch, ctrl+scroll or the ＋/－/⤢ buttons (0.5×–2.6×). Drag in any direction when zoomed in.
@@ -120,6 +164,17 @@ Every rewarded ad is **opt-in** (the 📺 purple buttons). This keeps you within
 | `wheel_spin` | lucky wheel | bonus spin (6/day) |
 | `daily_x2` | daily gift | double today's gift |
 | `shop_cheese` | shop | +5 golden cheese (5/day) |
+| `quest_x2` | ×2 tag on a finished quest (from quest 5, 10/day) | double the quest reward |
+| `task_chest_x2` | task chest reveal (6/day) | a second, bigger helping |
+| `delivery_crate` | a crate on the doorstep every 7–11 min (after quest 6, 8/day); "just peek" is free | 20 min of coins, cheese, and a chance of furniture or a book |
+| `second_chance_thief` / `_cat` / `_spoiler` | after losing to Rattigan, the cat or a spoiler (4/day each) | get the stolen coins back / call the readers back / cheer the floor up |
+| `shop_deal` | the Shop's daily furniture deal | half price today |
+| `festival_gift` | festival board | double today's festival gift |
+| `housewarming_x2` | arrival screen after moving | double the housewarming cheese |
+| `fair_extend` | Book Fair banner | +3 minutes of Book Fair |
+| `critic_bribe` | critic's review | a cheese platter (+1★) |
+
+Every placement is a choice the player makes. Each has a daily cap and a cooldown, and the free path is always there.
 
 **Interstitials** only appear at natural breaks (after a floor's grand opening), never in the first 3 minutes of a session, never within 4 minutes of another ad, and only after the 4th floor. Tune this in [src/config.js](src/config.js). The "No Break Ads" in-app purchase removes them.
 
@@ -202,10 +257,14 @@ src/
   native.js            Android back button, reminders, immersive mode, review prompt
   config.js            ad IDs, ad pacing, privacy URL, IAP switch
   core/                game state & rules (no DOM): economy, game, save, format
-  data/                floors, books, visitors, quests, tasks, story, daily/wheel/shop tables, branches
-  world/               canvas renderer: camera + pinch zoom, mouse/cat drawing, room art cache,
-                       scenery, seasons & weather (ambient.js), events.js, chatter.js, visitor AI, particles
-  ui/                  HUD, quick tasks, upgrade sheet, dialogs, story overlay + portraits, tutorial pointer
+  data/                floors + parody books, locations, furniture, festivals, regulars, dialogue,
+                       visitors, quests, tasks, story, daily/wheel/shop tables
+  world/               canvas renderer: camera + pinch zoom, mouse/cat drawing, room art cache (roomArt.js),
+                       furniture art, per-location scenery (locales.js), festival decor (festivalFx.js),
+                       location mechanics, micro-moments (life.js), seasons & weather (ambient.js),
+                       events.js, chatter.js, visitor AI, particles
+  ui/                  HUD, quick tasks, floor sheet (upgrades + style), dialogs, story overlay + portraits,
+                       hand-drawn SVG icon set (icons.js), dialog art, Shop / Map / Collection / Festival screens
   audio/               Web Audio setup, procedural waltz (music.js), sound effects (sfx.js)
   ads/ads.js           AdMob / H5 / mock ad providers
 public/audio/          Kenney CC0 sound effects (mp3)

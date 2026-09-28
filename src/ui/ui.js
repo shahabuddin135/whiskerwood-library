@@ -1,10 +1,13 @@
 // HUD, bottom bar, banners, quick tasks, story, tutorial pointer and the coin thief.
-import { $, h, toast, flyTo, bigText, centerOf, haptic, setHaptics } from './dom.js';
+import { $, h, toast, flyTo, bigText, centerOf, haptic, setHaptics, paintIcons } from './dom.js';
+import { icon, hasIcon } from './icons.js';
 import { RoomSheet } from './sheet.js';
 import { Screens, bookHtml } from './screens.js';
 import { StoryUI } from './story.js';
 import { modalOpen, closeModal } from './modals.js';
 import { ROOMS, BOOKS } from '../data/rooms.js';
+import { REGULAR } from '../data/regulars.js';
+import { CHARACTERS } from '../data/story.js';
 import * as E from '../core/economy.js';
 import { fmt, fmtTime } from '../core/format.js';
 import { sfx, setSfxEnabled } from '../audio/sfx.js';
@@ -14,11 +17,14 @@ import { wipeSave } from '../core/save.js';
 import { floorTop, IX } from '../world/layout.js';
 import { drawMouse } from '../world/draw.js';
 
+const SPECIAL_ICON = { royal: 'crown', author: 'pen', celeb: 'star' };
+
 export class UI {
   constructor(game, world) {
     this.game = game;
     this.world = world;
     world.ui = this;
+    paintIcons();
     this.sheet = new RoomSheet(this);
     this.screens = new Screens(this);
     this.story = new StoryUI(this);
@@ -27,6 +33,7 @@ export class UI {
     this.bannerRoom = -1;
     this.seenBooks = E.booksOwned(game.s);
     this.jarFullNotified = false;
+    this.crateNotified = false;
     this.thief = null;
     this.seasonChip = h('<div class="season-chip"></div>');
     document.body.appendChild(this.seasonChip);
@@ -53,12 +60,14 @@ export class UI {
       }
     });
     on('#navUpgrade', () => { sfx.open(); this.openRoom(this.world.focusedRoom()); });
-    on('#navShop', () => { sfx.open(); this.screens.shop(); });
+    on('#navShop', () => { sfx.open(); this.shopSeen = true; this.screens.shop(); });
     on('#navWheel', () => { sfx.open(); this.screens.wheel(); });
-    on('#navBranch', () => { sfx.open(); this.screens.branch(); });
+    on('#navBranch', () => { sfx.open(); this.screens.map(); });
     on('#storyBtn', () => { sfx.open(); this.screens.storyHour(); });
     on('#dailyBtn', () => { sfx.open(); this.screens.daily(); });
-    on('#albumBtn', () => { sfx.open(); this.seenBooks = E.booksOwned(this.game.s); this.screens.album(this.world.focusedRoom()); this.refreshBadges(); });
+    on('#festBtn', () => { sfx.open(); this.screens.festival(); });
+    on('#crateBtn', () => { sfx.tap(); this.world.panToGarden(); setTimeout(() => this.screens.deliveryCrate(), 450); });
+    on('#albumBtn', () => { sfx.open(); this.seenBooks = E.booksOwned(this.game.s); this.screens.collection('books', this.world.focusedRoom()); this.refreshBadges(); });
     on('#floorsBtn', () => { sfx.open(); this.screens.floors(); });
     on('#topBtn', () => {
       sfx.tap();
@@ -66,17 +75,27 @@ export class UI {
       if (c >= 0) { this.world.panToRoom(c); this.screens.construction(c); } else this.world.panToTop();
     });
     on('#settingsBtn', () => { sfx.open(); this.screens.settings(); });
-    on('#cheesePill', () => { sfx.open(); this.screens.shop(); });
+    on('#cheesePill', () => { sfx.open(); this.screens.shop('treats'); });
     on('#repBtn', () => { sfx.open(); this.screens.reputation(); });
-    on('#coinPill', () => { sfx.tap(); toast(`Lifetime coins earned: ${fmt(this.game.s.totalEarned)}`); });
+    on('#coinPill', () => { sfx.tap(); toast(`Lifetime coins earned: ${fmt(this.game.s.totalEarned)}`, '', 'coin'); });
     on('#quest', () => this.questTap());
+    on('#questAd', async (e) => {
+      e.stopPropagation();
+      const g = this.game;
+      if (!g.questProgress().done || !g.offerReady('questX2', 10)) return;
+      if (await Ads.rewarded('quest_x2')) {
+        g.useOffer('questX2', 240);
+        const got = g.claimQuest(2);
+        if (got) { this.screens.celebrate(got, centerOf($('#quest'))); bigText('Double reward!'); }
+      }
+    });
     on('#zoomIn', () => { sfx.tap(); this.world.zoomBy(1.35); });
     on('#zoomOut', () => { sfx.tap(); this.world.zoomBy(1 / 1.35); });
     on('#zoomFit', () => { sfx.tap(); this.world.resetZoom(); });
     $('#tasks').addEventListener('click', (e) => {
       const b = e.target.closest('[data-task]');
       if (b) this.taskTap(+b.dataset.task);
-      else if (e.target.closest('.chest')) toast('Finish all 3 tasks to open the chest! 🎁');
+      else if (e.target.closest('.chest')) toast('Finish all 3 tasks to open the chest!', '', 'chest');
     });
     const thief = $('#thief');
     thief.addEventListener('pointerdown', (e) => { e.stopPropagation(); this.catchThief(); });
@@ -90,30 +109,34 @@ export class UI {
       this.world.sims[i].prefill(ROOMS[i], g.s.rooms[i]);
       this.world.sims[i].spawnT = 0.3;
       this.screens.built(i);
+      this.world.chatter.react('build', i, 1);
       this.refreshBadges();
       this.native?.onFloorBuilt?.(g.builtCount());
     });
-    g.on('buildStart', ({ i }) => { toast(`🔨 Building ${ROOMS[i].name}…`); this.refreshBadges(); });
+    g.on('buildStart', ({ i }) => { toast(`Building ${ROOMS[i].name}…`, '', 'hammer'); this.refreshBadges(); });
     g.on('milestone', ({ i, lvl }) => {
       sfx.milestone(); haptic('medium');
-      toast(`🎉 ${ROOMS[i].name} Lv ${lvl}: income ×2!`, 'gold');
+      toast(`${ROOMS[i].name} Lv ${lvl}: income ×2!`, 'gold', 'sparkle');
       this.world.fx.sparkle(IX + 180, floorTop(i) + 80, 24, '#ffe28a', 60);
       this.world.fx.text(IX + 176, floorTop(i) + 70, '×2 INCOME!', { color: '#ffd257', size: 18, life: 1.8 });
+      this.world.chatter.react('milestone', i, 1);
     });
     g.on('book', (res) => { if (res.source === 'milestone') this.bookCard(res); this.refreshBadges(); });
     g.on('rep', ({ level, cheese }) => {
       sfx.levelUp();
-      toast(`⭐ Reputation Lv ${level}! +${cheese} golden cheese`, 'gold');
+      toast(`Reputation Lv ${level}! +${cheese} golden cheese`, 'gold', 'star');
       flyTo(centerOf($('#repBtn')), $('#cheesePill'), Math.min(8, 2 + cheese), 'cheese');
       $('#repBtn').animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35)' }, { transform: 'scale(1)' }], 500);
     });
     g.on('questReady', () => { sfx.sparkle(); haptic('light'); });
     g.on('jarFull', (full) => {
-      if (full && !this.jarFullNotified) { this.jarFullNotified = true; toast('🫙 The coin jar is full — tap it to collect!'); }
+      if (full && !this.jarFullNotified) { this.jarFullNotified = true; toast('The coin jar is full — tap it to collect!', '', 'jar'); this.world.chatter.react('jarFull', null, 30); }
       if (!full) this.jarFullNotified = false;
     });
+    g.on('trophy', ({ loc }) => setTimeout(() => this.screens.trophy(loc), 1200));
     g.on('boost', () => this.renderChips());
     g.on('tasks', () => this.renderTasks());
+    g.on('style', () => this.world.cache.clear());
     Ads.onChange((showing) => {
       if (showing) music.stop(); else if (g.s.settings.music) music.start();
     });
@@ -136,6 +159,7 @@ export class UI {
     const big = before > g.steady() * 60;
     sfx.collect(big); haptic(big ? 'medium' : 'light');
     this.flyCoins(centerOf(jar), big ? 14 : 8);
+    if (big) this.world.chatter.react('jar', null, 25);
   }
 
   flyCoins(from, n = 10) {
@@ -149,25 +173,27 @@ export class UI {
     const p = g.questProgress();
     if (p.done) {
       const got = g.claimQuest();
-      if (got) { this.screens.celebrate(got, centerOf($('#quest'))); toast('Quest complete! 📜', 'gold'); }
+      if (got) { this.screens.celebrate(got, centerOf($('#quest'))); toast('Quest complete!', 'gold', 'scroll'); }
       return;
     }
     sfx.tap();
     const q = g.s.quest;
     const hints = {
-      jarCollects: 'Tap the big coin jar at the bottom! 🫙',
-      specials: 'Special guests glow gold — watch for them and tap!',
-      parcels: 'Pigeons fly past with parcels — tap them!',
-      bellRings: 'Tap the librarian’s desk to ring the bell 🔔',
-      requests: 'Readers with a ❓ bubble need help — tap them!',
-      cats: 'When Baroness Clawdia peeks in a window, tap her until she runs!',
-      fish: 'Scroll down to the pond and tap the fishing mouse when the float bobs 🐟',
+      jarCollects: ['Tap the big coin jar at the bottom!', 'jar'],
+      specials: ['Special guests glow gold — watch for them and tap!', 'star'],
+      parcels: ['Pigeons fly past with parcels — tap them!', 'parcel'],
+      bellRings: ['Tap the librarian’s desk to ring the bell', 'bell'],
+      requests: ['Readers with a ? bubble need help — tap them!', 'book'],
+      cats: ['When Baroness Clawdia peeks in a window, tap her until she runs!', 'cat'],
+      locale: [g.loc().mechanic.desc, g.loc().mechanic.icon],
+      regulars: ['Regulars wear a purple name tag. Tap them when they visit!', 'friends'],
     };
     if (q.room != null && g.s.rooms[q.room]?.built && ['level', 'seats', 'shelves', 'staff', 'decor'].includes(q.type)) this.openRoom(q.room);
     else if (q.type === 'built') this.world.panToTop();
     else if (q.type === 'spins') this.screens.wheel();
-    else if (q.type === 'books') this.screens.album();
-    else if (hints[q.type]) toast(hints[q.type]);
+    else if (q.type === 'books') this.screens.collection('books');
+    else if (q.type === 'locale' && ['fishing', 'bottles'].includes(g.loc().mechanic.id)) { this.world.panToGarden(); toast(...hints.locale); }
+    else if (hints[q.type]) toast(hints[q.type][0], '', hints[q.type][1]);
   }
 
   taskTap(k) {
@@ -175,33 +201,29 @@ export class UI {
     const info = g.taskInfo(k);
     if (!info) return;
     if (info.claimed) return;
-    if (!info.done) { sfx.tap(); toast(`${info.icon} ${info.text} (${info.cur}/${info.target})`); return; }
+    if (!info.done) { sfx.tap(); toast(`${info.text} (${info.cur}/${info.target})`, '', info.icon === 'locale' ? g.loc().mechanic.icon : info.icon); return; }
     const res = g.claimTask(k);
     if (!res) return;
     const from = centerOf($(`[data-task="${k}"]`) || $('#tasks'));
     this.screens.celebrate(res.got, from);
-    if (res.chest) {
-      setTimeout(() => {
-        bigText('Task Chest! 🎁');
-        this.screens.celebrate(res.chest, from);
-        toast('All tasks done — here are 3 fresh ones!', 'gold');
-      }, 500);
-    }
+    if (res.chest) setTimeout(() => { this.screens.taskChest(res.chest); toast('All tasks done — here are 3 fresh ones!', 'gold', 'chest'); }, 500);
     this.renderTasks();
   }
 
-  openRoom(i) { closeModal(); this.sheet.open(i); }
+  openRoom(i, tab) { closeModal(); this.sheet.open(i, tab); }
   openBuild(i) { this.screens.build(i); }
   openConstruction(i) { this.screens.construction(i); }
   openParcel() { this.screens.parcel(); }
   onSheet(open) { document.body.classList.toggle('sheet-open', open); if (!open) this.world.cam.hold = false; }
-  toast(text, cls) { toast(text, cls); }
+  toast(text, cls, iconName) { toast(text, cls, iconName); }
 
-  // Generic top banner: { icon, title, text, btn, onClick, ms, urgent, room }
-  banner({ icon, title, text, btn = 'OK', onClick, ms = 8000, urgent = false, room = -1, extraBtn }) {
+  iconHtml(name) { return hasIcon(name) ? icon(name) : `<span style="font-size:24px">${name}</span>`; }
+
+  // Generic top banner: { icon, title, text, btn, onClick, ms, urgent, room, extraBtn }
+  banner({ icon: ic, title, text, btn = 'OK', onClick, ms = 8000, urgent = false, room = -1, extraBtn }) {
     const b = $('#banner');
     b.className = `banner ${urgent ? 'urgent' : ''}`;
-    b.innerHTML = `<span class="b-ico">${icon}</span><span class="b-text"><b>${title}</b><br>${text}</span>${extraBtn ? `<button class="btn ad b-extra">${extraBtn.label}</button>` : ''}<button class="btn b-main">${btn}</button>`;
+    b.innerHTML = `<span class="b-ico">${this.iconHtml(ic)}</span><span class="b-text"><b>${title}</b><br>${text}</span>${extraBtn ? `<button class="btn ad b-extra">${extraBtn.label}</button>` : ''}<button class="btn b-main">${btn}</button>`;
     b.querySelector('.b-main').addEventListener('click', () => { sfx.tap(); onClick?.(); b.classList.remove('show'); });
     if (extraBtn) b.querySelector('.b-extra').addEventListener('click', async () => { b.classList.remove('show'); await extraBtn.onClick(); });
     void b.offsetWidth;
@@ -212,10 +234,38 @@ export class UI {
     haptic('light');
   }
 
+  // Banner with two answers (book-club debates).
+  choice({ icon: ic, title, text, a, b: bb, ms = 12000 }) {
+    const b = $('#banner');
+    b.className = 'banner';
+    b.innerHTML = `<span class="b-ico">${this.iconHtml(ic)}</span><span class="b-text"><b>${title}</b><br>${text}</span><span class="b-choices"><button class="btn gold" data-c="a">${a.label}</button><button class="btn plain" data-c="b">${bb.label}</button></span>`;
+    b.querySelectorAll('[data-c]').forEach((el) => el.addEventListener('click', () => { sfx.tap(); b.classList.remove('show'); (el.dataset.c === 'a' ? a : bb).onClick(); }));
+    void b.offsetWidth;
+    b.classList.add('show');
+    clearTimeout(this.bannerT);
+    this.bannerT = setTimeout(() => b.classList.remove('show'), ms);
+    haptic('light');
+  }
+
+  // A little paper note (messages in bottles, letters).
+  note(title, text, ic = 'letter') {
+    document.querySelector('.note-card')?.remove();
+    const el = h(`<div class="note-card"><div class="nc-t">${icon(ic)}${title}</div>${text}<small>tap to fold it away</small></div>`);
+    document.body.appendChild(el);
+    const close = () => { el.style.transition = 'opacity .25s, transform .25s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 260); };
+    el.addEventListener('click', close);
+    setTimeout(close, 6500);
+  }
+
+  souvenirFound(sv) { if (!modalOpen()) this.screens.souvenir(sv); else toast(`Souvenir found: ${sv.name}! (+5% income forever)`, 'gold', 'keepsake'); }
+
   specialArrived(i, type, name) {
-    const icon = type === 'royal' ? '👑' : type === 'author' ? '✍️' : '⭐';
     const what = type === 'royal' ? 'Royalty is visiting' : type === 'author' ? 'Book signing in' : 'A celebrity is in';
-    this.banner({ icon, title: name, text: `${what} ${ROOMS[i].name}!`, btn: 'Visit', onClick: () => this.world.panToRoom(i), ms: 9000, room: i });
+    this.banner({ icon: SPECIAL_ICON[type], title: name, text: `${what} ${ROOMS[i].name}!`, btn: 'Visit', onClick: () => this.world.panToRoom(i), ms: 9000, room: i });
+  }
+  regularArrived(i, id) {
+    const reg = REGULAR[id]; const step = this.game.regularStep(id);
+    this.banner({ icon: 'friends', title: step ? `${reg.name} dropped by` : 'A new face!', text: step >= 4 ? `Say hello in ${ROOMS[i].name}.` : `Tap the name tag in ${ROOMS[i].name} to chat.`, btn: 'Visit', onClick: () => this.world.panToRoom(i), ms: 8000, room: i });
   }
   specialLeft(i) { if (this.bannerRoom === i) $('#banner').classList.remove('show'); }
   onSpecialGreeted(i, sp) {
@@ -225,12 +275,32 @@ export class UI {
     else if (sp.type === 'author') this.screens.author(i, sp.name);
   }
 
+  // Play the next scene of a regular's story in the dialogue overlay.
+  playRegular(id) {
+    $('#banner').classList.remove('show');
+    const res = this.game.advanceRegular(id);
+    const reg = res.reg;
+    if (!res.scene) {
+      const ch = CHARACTERS[id];
+      this.story.playLines(`reg-${id}-hi`, [[id, reg.done[Math.floor(Math.random() * reg.done.length)]], ['pip', `Always lovely to see you, ${ch.name.split(' ')[0]}!`]]);
+      return;
+    }
+    this.story.playLines(`reg-${id}-${res.step}`, res.scene, () => { if (res.gift) this.screens.regularGift({ ...reg, id }, res.gift); });
+  }
+
+  // Optional ad to undo a bad outcome (thief, cat, spoiler).
+  secondChance(kind, i, data) {
+    if (this.busy()) { toast(kind === 'cat' ? 'The readers were too scared… tap the cat next time!' : 'Oh no!', '', kind === 'cat' ? 'cat' : 'megaphone'); return; }
+    if (!this.screens.secondChance(kind, i, data)) toast(kind === 'cat' ? 'The readers were too scared… tap the cat next time!' : kind === 'spoiler' ? 'Spoiled! Tap faster next time.' : 'Catch him next time!', '', kind === 'cat' ? 'cat' : 'megaphone');
+  }
+
   fairStarted(sec) {
-    bigText('Book Fair! 🎪');
+    bigText('Book Fair!');
     this.banner({
-      icon: '🎪', title: 'The Book Fair is here!', text: `All income ×2 and extra visitors for ${Math.round(sec / 60)} minutes!`, btn: 'Hooray!', ms: 9000,
-      extraBtn: { label: '+3 min', onClick: async () => { if (await Ads.rewarded('fair_extend')) { this.game.s.stats.adsWatched++; this.world.events.startFair(180); toast('🎪 Book Fair extended by 3 minutes!', 'gold'); } } },
+      icon: 'festival', title: 'The Book Fair is here!', text: `All income ×2 and extra visitors for ${Math.round(sec / 60)} minutes!`, btn: 'Hooray!', ms: 9000,
+      extraBtn: { label: '+3 min', onClick: async () => { if (await Ads.rewarded('fair_extend')) { this.game.s.stats.adsWatched++; this.world.events.startFair(180); toast('Book Fair extended by 3 minutes!', 'gold', 'festival'); } } },
     });
+    this.world.chatter.react('fair', null, 1);
   }
 
   // A small non-blocking card when a milestone delivers a new book.
@@ -238,12 +308,12 @@ export class UI {
     const el = h(`<div class="book-toast"><div class="bt-cover">${bookHtml(res.book)}</div><div class="bt-text"><b>New book!</b><br>${res.book.title}<br><small>+10% on ${ROOMS[res.book.room].name}${res.setDone ? ' · SET ×2!' : ''}</small></div></div>`);
     document.body.appendChild(el);
     sfx.sparkle();
-    el.addEventListener('click', () => { this.seenBooks = E.booksOwned(this.game.s); this.screens.album(res.book.room); el.remove(); });
+    el.addEventListener('click', () => { this.seenBooks = E.booksOwned(this.game.s); this.screens.bookDetail(res.book, true); el.remove(); });
     setTimeout(() => el.classList.add('out'), 3200);
     setTimeout(() => el.remove(), 3700);
   }
 
-  /* ---------- 🦹 Sneaky Rattigan ---------- */
+  /* ---------- Sneaky Rattigan ---------- */
   startThief() {
     const g = this.game;
     if (this.thief || this.busy() || g.s.jar < g.steady() * 20) return false;
@@ -253,7 +323,7 @@ export class UI {
     const y = window.innerHeight - 78 - 70 - (parseFloat(getComputedStyle(document.body).getPropertyValue('--safe-bottom')) || 0);
     this.thief = { x: -80, y, tx: jar.x - 70, t: 0, dur: first ? 14 : 7, state: 'run' };
     $('#thief').classList.add('show');
-    this.banner({ icon: '🦹', title: 'Stop, thief!', text: 'Sneaky Rattigan is running for your coin jar — tap him!', btn: 'OK', ms: 5000, urgent: true });
+    this.banner({ icon: 'jar', title: 'Stop, thief!', text: 'Sneaky Rattigan is running for your coin jar — tap him!', btn: 'OK', ms: 5000, urgent: true });
     sfx.whistle();
     return true;
   }
@@ -268,7 +338,7 @@ export class UI {
     sfx.reward(); haptic('heavy');
     bigText('Gotcha!');
     this.flyCoins({ x: th.x + 40, y: th.y + 40 }, 12);
-    toast(`🦹 Caught Rattigan! He dropped ${fmt(amt)} coins + 2 cheese`, 'gold');
+    toast(`Caught Rattigan! He dropped ${fmt(amt)} coins + 2 cheese`, 'gold', 'jar');
   }
 
   updateThief(dt) {
@@ -283,7 +353,7 @@ export class UI {
         const g = this.game; const lost = g.s.jar * 0.2;
         g.s.jar -= lost;
         sfx.error();
-        toast(`🦹 Rattigan snatched ${fmt(lost)} coins from the jar! Catch him next time!`);
+        setTimeout(() => this.secondChance('thief', null, { lost }), 900);
       }
     } else if (th.state === 'stole') { th.t2 += dt; th.x -= 260 * dt; if (th.x < -100) this.endThief(); }
     else if (th.state === 'caught') { th.t2 += dt; if (th.t2 > 0.7) this.endThief(); }
@@ -302,14 +372,13 @@ export class UI {
   doPrestige() {
     const g = this.game;
     this.sheet.close();
-    const gained = g.prestige();
-    if (!gained) return;
+    const res = g.prestige();
+    if (!res) return;
     this.world.resetForBranch();
     sfx.fanfare(); haptic('heavy');
-    bigText(`+${gained} Golden Quills!`);
-    setTimeout(() => toast(`Welcome to ${g.branch().name}! 🌿`, 'gold'), 900);
     this.shownCoins = 0;
     g.save();
+    this.screens.arrival(res);
     this.native?.askReview?.('prestige');
     this.refresh();
   }
@@ -349,8 +418,10 @@ export class UI {
     $('#qText').textContent = q ? q.text : '';
     $('#qBar').style.width = `${(p.cur / p.target) * 100}%`;
     const rw = q?.reward || {};
-    $('#qReward').innerHTML = p.done ? 'Claim!' : rw.cheese ? `<span class="ico ico-cheese" style="width:16px;height:16px"></span>${rw.cheese}` : `<span class="ico ico-coin" style="width:16px;height:16px"></span>${rw.coins ? fmt(rw.coins) : ''}`;
+    const rwHtml = p.done ? 'Claim!' : rw.cheese ? `<span class="ico ico-cheese"></span>${rw.cheese}` : `<span class="ico ico-coin"></span>${rw.coins ? fmt(rw.coins) : ''}`;
+    if ($('#qReward').innerHTML !== rwHtml) $('#qReward').innerHTML = rwHtml;
     $('#quest').classList.toggle('ready', p.done);
+    $('#questAd').classList.toggle('show', p.done && s.questIdx >= 4 && g.offerReady('questX2', 10) && !this.sheet.isOpen);
 
     // jar
     const cap = g.jarCap();
@@ -366,12 +437,31 @@ export class UI {
     // story hour
     const sh = g.storyHourLeft();
     $('#storyBtn').classList.toggle('active', sh > 0);
-    $('#storyTime').textContent = sh > 0 ? fmtTime(sh) : 'Story Hour';
+    $('#storyTime').textContent = sh > 0 ? fmtTime(sh) : 'Story';
+
+    // festival & delivery crate
+    const fest = g.festival();
+    $('#festBtn').hidden = !fest;
+    if (fest) {
+      $('#festLabel').textContent = fest.short;
+      $('#festLabel').classList.toggle('long', fest.short.length > 7);
+      const fi = $('#festBtn .sp-ico');
+      if (fi.dataset.icon !== fest.icon) { fi.dataset.icon = fest.icon; fi.innerHTML = icon(fest.icon); }
+    }
+    const crate = g.chestDue();
+    $('#crateBtn').hidden = !crate;
+    if (crate && !this.crateNotified && !this.busy()) { this.crateNotified = true; this.banner({ icon: 'parcel', title: 'A delivery!', text: 'A mysterious crate turned up on the doorstep.', btn: 'Look', onClick: () => { this.world.panToGarden(); setTimeout(() => this.screens.deliveryCrate(), 450); }, ms: 7000 }); }
+    if (!crate) this.crateNotified = false;
 
     const season = this.world.season; const wx = this.world.ambient.weather;
-    const weatherIcon = wx.kind === 'rain' ? ' 🌧️' : wx.kind === 'snow' ? ' 🌨️' : wx.kind === 'cloudy' ? ' ☁️' : wx.rainbow > 0 ? ' 🌈' : '';
-    const chip = `${season.icon} ${season.name}${weatherIcon}`;
-    if (this.seasonChip.textContent !== chip) this.seasonChip.textContent = chip;
+    const underground = this.world.ambient.underground;
+    const wIcon = underground ? '' : wx.kind === 'rain' ? 'rain' : wx.kind === 'snow' ? 'snow' : wx.kind === 'cloudy' ? 'cloud' : '';
+    const key = `${season.key}|${wIcon}|${g.loc().id}`;
+    if (this.seasonKey !== key) {
+      this.seasonKey = key;
+      const sIcon = { spring: 'spring', summer: 'sun', autumn: 'leaf', winter: 'snow' }[season.key];
+      this.seasonChip.innerHTML = `${icon(sIcon)}${season.name}${wIcon ? icon(wIcon) : ''}`;
+    }
 
     if (this.sheet.isOpen) this.sheet.update();
     this.renderChips();
@@ -386,28 +476,29 @@ export class UI {
     const list = g.s.tasks?.list || [];
     const parts = list.map((_, k) => {
       const t = g.taskInfo(k);
-      return `<button class="task ${t.claimed ? 'claimed' : t.done ? 'done' : ''}" data-task="${k}" title="${t.text}"><i class="t-fill" style="width:${(t.cur / t.target) * 100}%"></i><span class="t-ico">${t.icon}</span><span class="t-num">${t.claimed ? '✓' : `${t.cur}/${t.target}`}</span></button>`;
+      const ic = t.icon === 'locale' ? g.loc().mechanic.icon : t.icon === 'festival' && g.festival() ? g.festival().token.icon : t.icon;
+      return `<button class="task ${t.claimed ? 'claimed' : t.done ? 'done' : ''}" data-task="${k}" title="${t.text}"><i class="t-fill" style="width:${(t.cur / t.target) * 100}%"></i><span class="t-ico">${icon(ic)}</span><span class="t-num">${t.claimed ? 'Done' : `${t.cur}/${t.target}`}</span></button>`;
     });
     const claimed = list.filter((t) => t.claimed).length;
-    const html = parts.join('') + `<button class="chest" aria-label="Task chest">🎁<small>${claimed}/3</small></button>`;
+    const html = parts.join('') + `<button class="chest" aria-label="Task chest">${icon('chest')}<small>${claimed}/3</small></button>`;
     const el = $('#tasks');
-    if (el.innerHTML !== html) el.innerHTML = html;
+    if (this.tasksHtml !== html) { this.tasksHtml = html; el.innerHTML = html; }
   }
 
   renderChips() {
     const g = this.game; const now = Date.now();
     const chips = [];
     const sh = g.storyHourLeft();
-    if (sh > 0) chips.push(`<span class="chip">📖 Story Hour <b>×2</b> ${fmtTime(sh)}</span>`);
+    if (sh > 0) chips.push(`<span class="chip">${icon('hourglass')} Story Hour <b>×2</b> ${fmtTime(sh)}</span>`);
     for (const b of g.s.boosts) {
       if (b.end <= now) continue;
       const mult = b.mult === 0 ? '×0' : `×${b.mult}`;
       const time = b.key === 'weather' ? '' : ` ${fmtTime((b.end - now) / 1000)}`;
-      chips.push(`<span class="chip">${b.icon} ${b.label} <b>${mult}</b>${b.room != null ? ` ${ROOMS[b.room].name.replace('The ', '')}` : ''}${time}</span>`);
+      const ic = hasIcon(b.icon) ? icon(b.icon) : b.icon;
+      chips.push(`<span class="chip ${b.mult < 1 ? 'bad' : ''}">${ic} ${b.label} <b>${mult}</b>${b.room != null ? ` ${ROOMS[b.room].name.replace('The ', '')}` : ''}${time}</span>`);
     }
     const html = chips.join('');
-    const el = $('#boostChips');
-    if (el.innerHTML !== html) el.innerHTML = html;
+    if (this.chipsHtml !== html) { this.chipsHtml = html; $('#boostChips').innerHTML = html; }
   }
 
   refreshBadges() {
@@ -416,9 +507,12 @@ export class UI {
     set('#dailyBtn', g.dailyStatus().canClaim);
     set('#navWheel', g.wheelStatus().free);
     set('#navBranch', g.canPrestige());
+    set('#navShop', !this.shopSeen && s.questIdx >= 6);
+    const fest = g.festival();
+    set('#festBtn', fest && (g.festGiftReady() || [0, 1, 2, 3, 4].some((k) => { const q = g.festQuest(k); return q && q.done && !q.claimed; })));
+    set('#crateBtn', g.chestDue());
     const owned = E.booksOwned(s);
     set('#albumBtn', owned > this.seenBooks);
-    $('#albumBtn small').textContent = `${owned}/${BOOKS.length}`;
     const next = g.nextFloor();
     set('#topBtn', next > 0 && g.constructing() < 0 && s.coins >= ROOMS[next].unlock);
     $('#topBtn').classList.toggle('hidden', next < 0 && g.constructing() < 0);
@@ -457,9 +551,11 @@ export class UI {
     if (r.width === 0 && target.getBoundingClientRect) { ptr.style.display = 'none'; return; }
     const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
     const below = cy < window.innerHeight * 0.5;
-    ptr.textContent = below ? '👆' : '👇';
+    ptr.classList.toggle('down', !below);
     ptr.style.display = 'block';
-    ptr.style.left = `${cx - 16}px`;
-    ptr.style.top = below ? `${r.top + r.height - 4}px` : `${r.top - 46}px`;
+    ptr.style.left = `${cx - 20}px`;
+    ptr.style.top = below ? `${r.top + r.height - 2}px` : `${r.top - 48}px`;
   }
 }
+
+export { BOOKS };
