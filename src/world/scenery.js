@@ -1,6 +1,7 @@
 // Sky, day/night cycle, parallax countryside, garden, underground vault, roof and construction.
 import { W, BX0, BX1, FH, GROUND_H, ROOF_H, IX, IW, floorTop } from './layout.js';
 import { rr, fillRR, ell, circ, shade, rng, star, drawMouse, coinIcon, drawCheese } from './draw.js';
+import { drawCaveSky, drawHighSkyGlow, drawFarFor, drawGroundFor, drawRoofFor, drawVault } from './locales.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 export const DAY_CYCLE = 720; // seconds for a full day in game
@@ -32,7 +33,12 @@ export function timeOfDay(nowSec) {
 const starField = (() => { const R = rng(7); return Array.from({ length: 90 }, () => ({ x: R(), y: R() * 0.75, r: 0.4 + R() * 1.1, tw: R() * 6 })); })();
 const clouds = (() => { const R = rng(11); return Array.from({ length: 7 }, (_, i) => ({ x: R() * 1.4 - 0.2, y: 0.05 + R() * 0.55, s: 0.6 + R() * 0.8, v: 0.004 + R() * 0.006, seed: i })); })();
 
-export function drawSky(ctx, v, tod) {
+export function drawSky(ctx, v, tod, kind = 'open') {
+  if (kind === 'cave') { drawCaveSky(ctx, v, tod); return; }
+  drawSkyOpen(ctx, v, tod);
+  if (kind === 'high') drawHighSkyGlow(ctx, v, tod);
+}
+function drawSkyOpen(ctx, v, tod) {
   const g = ctx.createLinearGradient(0, 0, 0, v.H);
   g.addColorStop(0, tod.top); g.addColorStop(1, tod.bottom);
   ctx.fillStyle = g; ctx.fillRect(0, 0, v.W, v.H);
@@ -87,7 +93,8 @@ export function drawClouds(ctx, v, tod, wet = 0) {
 
 /* ---------------- far countryside (parallax, world space) ---------------- */
 // `ctx` has the world transform; we shift vertically for parallax.
-export function drawFar(ctx, v, tod, scene, t, season) {
+export function drawFar(ctx, v, tod, loc, t, season) {
+  if (loc.id !== 'meadow') { drawFarFor(ctx, v, tod, loc, t, season); return; }
   const tint = (hex, amt = 1) => mix(hex, '#1b2447', Math.min(0.85, tod.dark * 1.15 * amt));
   const L = v.worldLeft - 40; const R = v.worldRight + 40;
   const winter = season.key === 'winter';
@@ -99,14 +106,6 @@ export function drawFar(ctx, v, tod, scene, t, season) {
     ctx.beginPath(); ctx.moveTo(L, 3000);
     for (let x = L; x <= R; x += 20) ctx.lineTo(x, -70 - Math.sin(x * 0.012) * 26 - Math.sin(x * 0.031 + 1) * 10);
     ctx.lineTo(R, 3000); ctx.closePath(); ctx.fill();
-    if (scene === 'cove') {
-      ctx.fillStyle = tint('#6fb3d6'); ctx.fillRect(L, -38, R - L, 60);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      for (let k = 0; k < 14; k++) { const x = L + ((k * 53 + t * 6) % (R - L)); ctx.fillRect(x, -30 + (k % 4) * 6, 10, 1.2); }
-      drawLighthouse(ctx, W - 16, -40, tod, t, tint);
-      drawBoat(ctx, 30 + ((t * 3) % 300) - 60, -36, tint);
-    }
-    if (scene === 'castle') drawCastle(ctx, 10, -60, tint);
   });
 
   layer(0.55, () => {
@@ -116,7 +115,7 @@ export function drawFar(ctx, v, tod, scene, t, season) {
     for (let x = L; x <= R; x += 16) ctx.lineTo(x, hill(x));
     ctx.lineTo(R, 3000); ctx.closePath(); ctx.fill();
     // fields
-    if ((scene === 'meadow' || scene === 'windmill') && !winter) {
+    if (!winter) {
       ctx.save(); ctx.globalAlpha = 0.55;
       const fieldCols = season.key === 'autumn' ? ['#e8b95a', '#c98f3e'] : ['#b9d77a', '#e8cf7a'];
       for (let k = 0; k < 8; k++) { ctx.fillStyle = tint(fieldCols[k % 2]); ctx.fillRect(L + k * 90, -18 + (k % 3) * 3, 70, 5); }
@@ -145,7 +144,7 @@ export function drawFar(ctx, v, tod, scene, t, season) {
       ell(ctx, x, y - 3, 6 + Rn() * 3, 7 + Rn() * 3, tint(season.trees[Math.floor(Rn() * season.trees.length)]));
     }
     // sheep grazing on the hills
-    if ((scene === 'meadow' || scene === 'windmill' || scene === 'castle') && !winter) {
+    if (!winter) {
       for (let k = 0; k < 6; k++) {
         const sx = -120 + k * 70 + Math.sin(t * 0.05 + k) * 12 + (k > 2 ? 360 : 0);
         if (sx < L || sx > R) continue;
@@ -154,9 +153,8 @@ export function drawFar(ctx, v, tod, scene, t, season) {
         ctx.fillStyle = tint('#3a3440'); ctx.fillRect(sx - 2.5, sy - 0.5, 1, 2); ctx.fillRect(sx + 1.5, sy - 0.5, 1, 2);
       }
     }
-    if (scene === 'windmill') drawWindmill(ctx, W - 10, -30, t, 1.1, tint);
-    if (scene === 'pond') { drawWillow(ctx, 12, -18, t, tint); drawWillow(ctx, W - 12, -22, t, tint); }
-    if (scene === 'meadow') { drawBarn(ctx, W - 18, -24, tint); }
+    drawWindmill(ctx, W + 70, -40, t, 0.9, tint);
+    drawBarn(ctx, W - 18, -24, tint);
   });
 }
 
@@ -176,47 +174,9 @@ function drawWindmill(ctx, x, y, t, s, tint) {
   ctx.restore();
 }
 
-function drawLighthouse(ctx, x, y, tod, t, tint) {
-  ctx.save(); ctx.translate(x, y);
-  ell(ctx, 0, 6, 26, 10, tint('#8a8577'));
-  ctx.fillStyle = tint('#f4efe6'); ctx.beginPath(); ctx.moveTo(-9, 2); ctx.lineTo(-6, -58); ctx.lineTo(6, -58); ctx.lineTo(9, 2); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = tint('#d9534f'); [-44, -24, -4].forEach((yy) => { ctx.beginPath(); ctx.moveTo(-8.2 + (yy + 58) * -0.05, yy); ctx.lineTo(8.2 - (yy + 58) * -0.05, yy); ctx.lineTo(8.6, yy + 9); ctx.lineTo(-8.6, yy + 9); ctx.fill(); });
-  fillRR(ctx, -8, -62, 16, 4, 1, tint('#3a3440'));
-  fillRR(ctx, -5, -72, 10, 10, 2, tod.dark > 0.3 ? '#fff3b0' : tint('#bfe3f2'));
-  ctx.fillStyle = tint('#d9534f'); ctx.beginPath(); ctx.moveTo(-7, -72); ctx.lineTo(0, -80); ctx.lineTo(7, -72); ctx.fill();
-  if (tod.dark > 0.3) {
-    const a = t * 0.9;
-    ctx.globalCompositeOperation = 'lighter';
-    const beam = (dir) => {
-      const g = ctx.createLinearGradient(0, -67, Math.cos(a) * 220 * dir, -67);
-      g.addColorStop(0, `rgba(255,240,170,${0.45 * tod.dark})`); g.addColorStop(1, 'rgba(255,240,170,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, -67); ctx.lineTo(Math.cos(a) * 220 * dir, -67 - 26); ctx.lineTo(Math.cos(a) * 220 * dir, -67 + 26); ctx.closePath(); ctx.fill();
-    };
-    beam(1); beam(-1);
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  ctx.restore();
-}
 
-function drawBoat(ctx, x, y, tint) {
-  ctx.fillStyle = tint('#8a5a3a'); ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x + 10, y); ctx.lineTo(x + 7, y + 4); ctx.lineTo(x - 7, y + 4); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = tint('#fbf6ea'); ctx.beginPath(); ctx.moveTo(x, y - 16); ctx.lineTo(x, y - 1); ctx.lineTo(x + 9, y - 1); ctx.closePath(); ctx.fill();
-}
 
-function drawCastle(ctx, x, y, tint) {
-  const c = tint('#b9b3c9');
-  ctx.fillStyle = c; ctx.fillRect(x - 20, y - 20, 40, 40);
-  [-20, 12].forEach((dx) => { ctx.fillRect(x + dx, y - 44, 8, 64); ctx.fillStyle = tint('#6d5fa3'); ctx.beginPath(); ctx.moveTo(x + dx - 2, y - 44); ctx.lineTo(x + dx + 4, y - 58); ctx.lineTo(x + dx + 10, y - 44); ctx.fill(); ctx.fillStyle = c; });
-  for (let k = 0; k < 5; k++) ctx.fillRect(x - 20 + k * 9, y - 25, 5, 6);
-  fillRR(ctx, x - 5, y + 4, 10, 16, 5, tint('#4b3f58'));
-}
 
-function drawWillow(ctx, x, y, t, tint) {
-  ctx.fillStyle = tint('#6b4a34'); ctx.fillRect(x - 2, y - 10, 4, 22);
-  ell(ctx, x, y - 16, 20, 12, tint('#7fae62'));
-  ctx.strokeStyle = tint('#6e9e55'); ctx.lineWidth = 1.2;
-  for (let k = -18; k <= 18; k += 4) { ctx.beginPath(); ctx.moveTo(x + k, y - 14); ctx.quadraticCurveTo(x + k + Math.sin(t + k) * 2, y, x + k * 1.1, y + 6); ctx.stroke(); }
-}
 
 function drawBarn(ctx, x, y, tint) {
   ctx.fillStyle = tint('#b5523b'); ctx.fillRect(x - 14, y - 12, 28, 18);
@@ -226,7 +186,8 @@ function drawBarn(ctx, x, y, tint) {
 }
 
 /* ---------------- garden apron + underground vault ---------------- */
-export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
+export function drawGround(ctx, v, tod, loc, t, coins, fisher, season, info) {
+  if (drawGroundFor(ctx, v, tod, loc, t, coins, season, info)) return;
   const L = v.worldLeft - 40; const R = v.worldRight + 40;
   const dark = tod.dark;
   const tint = (hex) => mix(hex, '#1b2447', Math.min(0.75, dark * 1.05));
@@ -284,12 +245,9 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   }
   ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(284, 20, 3, 26); fillRR(ctx, 276, 8, 20, 13, 5, tint('#4f7cac')); ctx.fillStyle = tint('#e0404f'); ctx.fillRect(292, 4, 2, 9); ctx.fillRect(292, 4, 6, 3);
 
-  // theme feature on the right of the garden
-  if (scene === 'meadow') { [[320, 40], [352, 58], [390, 36]].forEach(([x, y]) => { ell(ctx, x, y, 13, 9, tint('#e8c465')); ctx.strokeStyle = tint('#c9a13e'); ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(x, y, 9, 6, 0, 0, Math.PI * 2); ctx.stroke(); }); drawScarecrow(ctx, 420, 40, t, tint); }
-  if (scene === 'windmill') drawWindmill(ctx, 360, 52, t, 0.75, tint);
-  if (scene === 'cove') { ctx.fillStyle = tint('#f0dcae'); ctx.fillRect(300, 40, R - 300, 50); ctx.fillStyle = tint('#6fb3d6'); ctx.fillRect(330, 62, R - 330, 28); ctx.fillStyle = 'rgba(255,255,255,0.6)'; for (let k = 0; k < 6; k++) ctx.fillRect(334 + ((k * 23 + t * 8) % 100), 64 + (k % 3) * 7, 9, 1.2); drawBoat(ctx, 380 + Math.sin(t * 0.5) * 8, 70, tint); }
-  if (scene === 'pond') { [[330, 30], [360, 45]].forEach(([x, y], k) => { const bob = Math.sin(t * 2 + k) * 1; ell(ctx, x, y + bob, 7, 4, tint('#fbf6ea')); circ(ctx, x + 6, y - 4 + bob, 3.2, tint('#fbf6ea')); ctx.fillStyle = tint('#f2a13e'); ctx.fillRect(x + 8.5, y - 4.5 + bob, 3, 1.5); }); drawWillow(ctx, 405, 30, t, tint); }
-  if (scene === 'castle') { fillRR(ctx, 330, -10, 50, 60, 2, tint('#b9b3c9')); for (let k = 0; k < 5; k++) ctx.fillRect(330 + k * 11, -18, 6, 9); fillRR(ctx, 346, 20, 18, 30, 9, tint('#4b3f58')); ctx.fillStyle = tint('#7b2d8b'); ctx.fillRect(354, -44, 1.5, 28); ctx.beginPath(); ctx.moveTo(355.5, -44); ctx.lineTo(372 + Math.sin(t * 3) * 2, -38); ctx.lineTo(355.5, -32); ctx.fill(); }
+  // hay bales and a scarecrow on the right of the garden
+  [[372, 36], [400, 60]].forEach(([x, y]) => { ell(ctx, x, y, 13, 9, tint('#e8c465')); ctx.strokeStyle = tint('#c9a13e'); ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(x, y, 9, 6, 0, 0, Math.PI * 2); ctx.stroke(); });
+  drawScarecrow(ctx, 428, 40, t, tint);
 
   // fireflies at night
   if (dark > 0.35 && !winter) {
@@ -303,7 +261,7 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // underground: soil + a cosy vault where the treasure piles up
+  // underground: soil + the keepsake vault
   const sg = ctx.createLinearGradient(0, 90, 0, GROUND_H);
   sg.addColorStop(0, '#7a5638'); sg.addColorStop(1, '#4a3222');
   ctx.fillStyle = sg; ctx.fillRect(L, 90, R - L, GROUND_H - 90 + 400);
@@ -312,27 +270,7 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   for (let k = 0; k < 60; k++) ell(ctx, L + Rp() * (R - L), 100 + Rp() * 120, 1.5 + Rp() * 3, 1 + Rp() * 2, Rp() < 0.5 ? '#6b4a33' : '#8a6a4c');
   ctx.strokeStyle = '#8a6a4c'; ctx.lineWidth = 1.4;
   for (let k = 0; k < 6; k++) { const x = 30 + k * 75; ctx.beginPath(); ctx.moveTo(x, 90); ctx.bezierCurveTo(x + 8, 110, x - 10, 124, x + 4, 140); ctx.stroke(); }
-  // vault room
-  const vx = 150, vy = 120, vw = 170, vh = 80;
-  ctx.fillStyle = '#3a271b'; rr(ctx, vx, vy, vw, vh, 30); ctx.fill();
-  ctx.fillStyle = '#e8cfa0'; rr(ctx, vx + 6, vy + 6, vw - 12, vh - 10, 26); ctx.fill();
-  ctx.fillStyle = '#d4b98a'; ctx.fillRect(vx + 6, vy + vh - 18, vw - 12, 14);
-  // tunnel
-  ctx.fillStyle = '#3a271b'; ctx.fillRect(vx - 60, vy + vh - 26, 64, 20); ctx.fillRect(vx - 64, 90, 18, vy + vh - 96);
-  // treasure pile grows with your wealth
-  const lv = Math.max(0, Math.min(1, Math.log10(Math.max(1, coins)) / 16));
-  const pileW = 20 + lv * 110; const pileH = 6 + lv * 40;
-  ctx.fillStyle = '#e9a623'; ctx.beginPath(); ctx.moveTo(vx + vw / 2 - pileW / 2, vy + vh - 4); ctx.quadraticCurveTo(vx + vw / 2, vy + vh - 4 - pileH * 2, vx + vw / 2 + pileW / 2, vy + vh - 4); ctx.fill();
-  ctx.fillStyle = '#ffd257'; ctx.beginPath(); ctx.moveTo(vx + vw / 2 - pileW / 2 + 6, vy + vh - 5); ctx.quadraticCurveTo(vx + vw / 2, vy + vh - 6 - pileH * 1.7, vx + vw / 2 + pileW / 2 - 6, vy + vh - 5); ctx.fill();
-  const Rc = rng(3);
-  for (let k = 0; k < 6 + lv * 20; k++) coinIcon(ctx, vx + vw / 2 + (Rc() - 0.5) * pileW * 0.8, vy + vh - 6 - Rc() * pileH * 0.8, 2.6);
-  drawCheese(ctx, vx + 26, vy + vh - 12, 1.1); drawCheese(ctx, vx + 40, vy + vh - 10, 0.9);
-  fillRR(ctx, vx + vw - 38, vy + vh - 26, 16, 20, 3, '#8a5a3a'); ctx.fillStyle = '#6b4128'; ctx.fillRect(vx + vw - 38, vy + vh - 20, 16, 2); ctx.fillRect(vx + vw - 38, vy + vh - 12, 16, 2);
-  // sleepy guard mouse
-  drawMouse(ctx, vx + vw - 58, vy + vh - 4, { fur: '#8f7f73', belly: '#d9cdc2', dir: -1, pose: 'sit', t: t * 0.3, sleep: true, hat: 'bobble', hatCol: '#4f7cac', noShadow: true });
-  ctx.fillStyle = '#fff'; ctx.font = `600 7px ${FONT}`; ctx.textAlign = 'center';
-  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 2); ctx.fillText('z', vx + vw - 52 + Math.sin(t) * 2, vy + vh - 34 - ((t * 6) % 10)); ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,240,200,0.8)'; ctx.font = `600 8px ${FONT}`; ctx.fillText('The Cheese & Coin Vault', vx + vw / 2, vy + 20);
+  drawVault(ctx, loc, coins, t, info);
 }
 
 function drawScarecrow(ctx, x, y, t, tint) {
@@ -343,7 +281,8 @@ function drawScarecrow(ctx, x, y, t, tint) {
 }
 
 /* ---------------- roof ---------------- */
-export function drawRoof(ctx, topY, t, tod, name, opts = {}) {
+export function drawRoof(ctx, topY, t, tod, name, opts = {}, sty = null) {
+  if (sty && sty.roof !== 'cottage') { const r = drawRoofFor(ctx, sty.roof, topY, t, tod, name, opts, sty); if (r) { if (opts.fair) drawBunting(ctx, topY, t); return r; } }
   const cx = (BX0 + BX1) / 2;
   const y0 = topY; // top of highest floor
   const peak = y0 - ROOF_H;
@@ -374,20 +313,7 @@ export function drawRoof(ctx, topY, t, tod, name, opts = {}) {
     ctx.fillStyle = 'rgba(220,238,250,0.95)';
     for (let x = BX0 - ox + 6; x < BX1 + ox - 4; x += 13) { const l = 4 + ((x * 7) % 9); ctx.beginPath(); ctx.moveTo(x - 2, y0 + 4); ctx.lineTo(x + 2, y0 + 4); ctx.lineTo(x, y0 + 4 + l); ctx.fill(); }
   }
-  if (opts.fair) {
-    // festival bunting along the eaves
-    const cols = ['#f28b82', '#ffd24a', '#a3d9a5', '#9ec5f0', '#d4b3f0'];
-    [[BX0 - ox + 4, y0], [BX1 + ox - 4, y0]].forEach(([ex, ey]) => {
-      const n = 9;
-      for (let k = 0; k < n; k++) {
-        const a = k / n; const b = (k + 1) / n;
-        const x1 = ex + (cx - ex) * a; const y1 = ey + (peak + 8 - ey) * a + Math.sin(a * Math.PI) * 10;
-        const x2 = ex + (cx - ex) * b; const y2 = ey + (peak + 8 - ey) * b + Math.sin(b * Math.PI) * 10;
-        ctx.fillStyle = cols[k % cols.length];
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo((x1 + x2) / 2, (y1 + y2) / 2 + 9 + Math.sin(t * 4 + k) * 1.5); ctx.closePath(); ctx.fill();
-      }
-    });
-  }
+  if (opts.fair) drawBunting(ctx, y0, t);
   // round attic window glowing at night
   circ(ctx, cx, peak + 52, 17, '#6b4128');
   circ(ctx, cx, peak + 52, 13, tod.dark > 0.3 ? '#ffd98a' : '#bfe3f2');
@@ -405,6 +331,22 @@ export function drawRoof(ctx, topY, t, tod, name, opts = {}) {
   ctx.beginPath(); ctx.moveTo(-8, 0); ctx.quadraticCurveTo(-18, -2, -16, -9); ctx.stroke();
   ctx.restore();
   return { chimneyX: BX1 - 79, chimneyY: peak + 20 };
+}
+
+// Festival bunting along the eaves (Book Fair).
+export function drawBunting(ctx, y0, t) {
+  const cx = (BX0 + BX1) / 2; const ox = 18; const peak = y0 - ROOF_H;
+  const cols = ['#f28b82', '#ffd24a', '#a3d9a5', '#9ec5f0', '#d4b3f0'];
+  [[BX0 - ox + 4, y0], [BX1 + ox - 4, y0]].forEach(([ex, ey]) => {
+    const n = 9;
+    for (let k = 0; k < n; k++) {
+      const a = k / n; const b = (k + 1) / n;
+      const x1 = ex + (cx - ex) * a; const y1 = ey + (peak + 8 - ey) * a + Math.sin(a * Math.PI) * 10;
+      const x2 = ex + (cx - ex) * b; const y2 = ey + (peak + 8 - ey) * b + Math.sin(b * Math.PI) * 10;
+      ctx.fillStyle = cols[k % cols.length];
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo((x1 + x2) / 2, (y1 + y2) / 2 + 9 + Math.sin(t * 4 + k) * 1.5); ctx.closePath(); ctx.fill();
+    }
+  });
 }
 
 /* ---------------- construction site ---------------- */

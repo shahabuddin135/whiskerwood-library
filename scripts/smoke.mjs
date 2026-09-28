@@ -25,7 +25,8 @@ for (let step = 0; step < 4 * 3600; step++) {
   if (q.type === 'spins' && g.wheelStatus().free) g.grant(g.spinWheel('free').prize);
   if (q.type === 'books') g.grantBook();
   // event-driven actions happen every so often in real play
-  if (['requests', 'cats', 'worms', 'lostBooks', 'fish', 'pets'].includes(q.type) && step % 30 === 0) { g.s.stats[q.type]++; g.checkQuest(); }
+  if (['requests', 'cats', 'worms', 'lostBooks', 'fish', 'pets', 'locale', 'curios'].includes(q.type) && step % 30 === 0) { g.s.stats[q.type]++; g.checkQuest(); }
+  if (q.type === 'regulars' && step % 60 === 0) g.advanceRegular(g.pickRegular().id);
   // like a player, work towards the current quest's upgrade
   const qTrack = { level: 'lvl', seats: 'seats', shelves: 'shelves', staff: 'staff' }[q.type];
   if (qTrack && g.s.rooms[q.room]?.built) g.buy(q.room, qTrack);
@@ -62,8 +63,41 @@ g.s.daily.last = '2000-01-01'; const d3 = g.dailyStatus(); if (d3.day !== 0 || d
 const off = g.offlineEarnings(10 * 3600 * 1000);
 if (!(off.amount > 0) || !off.capped) fail('offline earnings should be positive and capped');
 
-// prestige
+// prestige: floors reset, but the legacy (furniture, souvenirs, regulars, stamps) carries over
+g.s.cheese += 500;
+if (!g.buyFurniture('persian', 0) || !g.ownsFurniture('persian') || g.floorStyle(0).rug !== 'persian') fail('furniture purchase/placement');
+if (g.buyFurniture('persian')) fail('bought the same furniture twice');
+if (g.buyFurniture('jelly')) fail('location-exclusive item sold in the wrong location');
+const sv = g.findSouvenir(1); if (!sv || !g.s.souvenirs[sv.id]) fail('souvenir');
+for (let k = 0; k < 4; k++) g.advanceRegular('doris');
+if (g.regularStep('doris') !== 4 || !g.ownsFurniture('bookmarks')) fail('regular story gift');
+const multBefore = (await import('../src/core/economy.js')).legacyBonus(g.s);
 const before = g.s.quills;
-if (g.canPrestige()) { const got = g.prestige(); if (got < 1 || g.s.quills !== before + got || g.builtCount() !== 1) fail('prestige'); else console.log(`prestige ok: +${got} quills, now branch "${g.branch().name}"`); }
-else console.log('prestige not yet available after 4h of bot play (pending quills:', g.pendingQuills(), ')');
+if (g.canPrestige()) {
+  const res = g.prestige();
+  const E = await import('../src/core/economy.js');
+  if (!res || res.gained < 1 || g.s.quills !== before + res.gained) fail('prestige quills');
+  if (!g.s.stamps.includes('meadow') || g.loc().id !== 'cove') fail('stamp / next location');
+  if (!g.ownsFurniture('persian') || !g.s.souvenirs[sv.id] || g.regularStep('doris') !== 4) fail('legacy lost on move');
+  if (E.legacyBonus(g.s) < multBefore) fail('legacy bonus shrank on move');
+  if (!res.gift.cheese) fail('housewarming gift');
+  console.log(`move ok: +${res.gained} quills, ${res.from.name} -> ${res.to.name}, head start ${res.head} floors, gift ${res.gift.cheese} cheese + ${res.gift.item?.name}`);
+  // second move: Moving Van perk now applies
+  g.s.rooms.forEach((r) => { r.built = true; }); g.s.branchEarned = 1e18;
+  const res2 = g.prestige();
+  if (!res2 || res2.head !== 3 || g.builtCount() !== 3) fail(`moving van head start (${res2?.head}, ${g.builtCount()})`);
+  if (g.buyFurniture('jelly')) fail('cove exclusive still sold after leaving the cove');
+} else console.log('prestige not yet available after 4h of bot play (pending quills:', g.pendingQuills(), ')');
+
+// festivals: forcing one on makes tokens, quests and books work
+const { festivalAt, FESTIVAL } = await import('../src/data/festivals.js');
+g.festOverride = { ...FESTIVAL.ramadan, key: 'ramadan-test' };
+g.addTokens(60);
+if (!g.festQuest(0).done || !g.claimFestQuest(0)) fail('festival quest');
+const fb = g.festivalBooks()[0]; if (!g.buyFestivalBook(fb.id)) fail('festival book');
+if (!festivalAt(new Date('2026-12-15T12:00:00').getTime())) fail('christmas date');
+g.festOverride = undefined;
+// ad offers are capped
+let n = 0; while (g.offerReady('test', 3) && n < 10) { g.useOffer('test'); n++; }
+if (n !== 3) fail('ad offer daily cap');
 if (!process.exitCode) console.log('SMOKE OK');

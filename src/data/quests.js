@@ -1,4 +1,5 @@
 import { ROOMS, DECOR } from './rooms.js';
+import { localeText } from './tasks.js';
 
 // Hand-written onboarding quests. `hint` drives the tutorial pointer.
 // reward: { coins, coinsSec (seconds of income), cheese, book }
@@ -21,7 +22,7 @@ export const SCRIPTED = [
 ];
 
 // Endless generated quests once the script runs out.
-const CYCLE = ['level', 'built', 'seats', 'requests', 'level', 'decor', 'specials', 'staff', 'cats', 'level', 'books', 'shelves', 'parcels', 'built', 'fish'];
+const CYCLE = ['level', 'built', 'seats', 'requests', 'level', 'decor', 'specials', 'staff', 'cats', 'level', 'books', 'shelves', 'locale', 'parcels', 'built', 'regulars', 'fish'];
 
 // H: helpers from the Game that pick sensible (affordable-soon) targets:
 //   H.level() -> { i, target } | null, H.cheapest(track) -> room index | null
@@ -63,7 +64,9 @@ export function generateQuest(n, s, H) {
       case 'specials': return { type, target: 2, text: 'Greet 2 special guests', reward: { cheese: 4, coinsSec: 60 * tier } };
       case 'requests': return { type, target: 3, text: 'Help 3 readers find their books (tap the ❓ bubbles)', reward: { cheese: 3, coinsSec: 90 * tier } };
       case 'cats': return { type, target: 1, text: 'Shoo Baroness Clawdia away from a window', reward: { cheese: 4, coinsSec: 90 * tier } };
-      case 'fish': return { type, target: 2, text: 'Catch 2 fish at the pond (tap when the float bobs)', reward: { cheese: 2, coinsSec: 60 * tier } };
+      case 'fish': if (H.mech === 'fishing') return { type: 'locale', target: 2, text: 'Catch 2 fish at the pond (tap when the float bobs)', reward: { cheese: 2, coinsSec: 60 * tier } }; break;
+      case 'locale': { const n = H.mech === 'bookwyrm' || H.mech === 'whale' ? 1 : 3; return { type, target: n, text: localeText(H.mech, n), reward: { cheese: 3, coinsSec: 90 * tier } }; }
+      case 'regulars': if (s.questIdx > 8) return { type, target: 1, text: 'Chat with a regular (tap a reader wearing a name tag)', reward: { cheese: 4, coinsSec: 60 * tier } }; break;
       case 'parcels': return { type, target: 1, text: 'Catch a pigeon parcel', reward: { cheese: 3, coinsSec: 60 * tier } };
       case 'books': return { type, target: null, text: 'Collect a new book for your album', reward: { cheese: 5 } };
       default: break;
@@ -103,3 +106,6 @@ export const SHOP = {
   adCheese: 5,
   adCheeseDaily: 5,
 };
+
+// The delivery crate on the doorstep: opens fully with a rewarded ad (or a small free peek).
+export const AD_CHEST = { firstSec: 240, everySec: [420, 660], daily: 8, coinsSec: 1200, cheese: [5, 10], itemChance: 0.18, bookChance: 0.3, peekSec: 60 };

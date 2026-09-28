@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { icon } from './icons.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -14,11 +15,19 @@ export const ICO = {
   cheese: '<span class="ico ico-cheese inline-ico"></span>',
   quill: '<span class="ico ico-quill inline-ico"></span>',
 };
+// Inline icon for text: ig('heart')
+export const ig = (name) => `<span class="ig">${icon(name)}</span>`;
 
-export function toast(text, cls = '') {
-  const el = h(`<div class="toast ${cls}">${text}</div>`);
+// Fill every [data-icon] placeholder in a root with its SVG.
+export function paintIcons(root = document) {
+  root.querySelectorAll('[data-icon]').forEach((el) => { if (!el.dataset.painted) { el.innerHTML = icon(el.dataset.icon); el.dataset.painted = '1'; } });
+}
+
+export function toast(text, cls = '', iconName = null) {
+  const el = h(`<div class="toast ${cls}">${iconName ? icon(iconName) : ''}<span>${text}</span></div>`);
   $('#toasts').appendChild(el);
-  setTimeout(() => el.remove(), 2700);
+  while ($('#toasts').children.length > 3) $('#toasts').firstElementChild.remove();
+  setTimeout(() => el.remove(), 3000);
 }
 
 export function bigText(text) {
