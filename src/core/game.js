@@ -1,18 +1,16 @@
 import { Emitter } from './emitter.js';
 import { ROOMS, BOOKS, LIMITS, RARITY } from '../data/rooms.js';
-import { SCRIPTED, generateQuest, DAILY, WHEEL, SHOP, AD_CHEST } from '../data/quests.js';
+import { SCRIPTED, generateQuest, DAILY, WHEEL, SHOP } from '../data/quests.js';
 import { TASK_POOL, TASK_CHEST } from '../data/tasks.js';
 import { STORY } from '../data/story.js';
-import { locationInfo, LOCATIONS, SOUVENIRS } from '../data/locations.js';
-import { FURNITURE, FURN, SLOTS } from '../data/furniture.js';
-import { REGULARS, REGULAR } from '../data/regulars.js';
-import { festivalAt, FESTIVAL_QUEST, FESTIVAL_BOOKS } from '../data/festivals.js';
+import { branchInfo } from '../data/branches.js';
 import * as E from './economy.js';
 import { dayKey, daysBetween } from './format.js';
 import { saveState } from './save.js';
 
-const COUNT_TYPES = ['jarCollects', 'specials', 'spins', 'parcels', 'bellRings', 'requests', 'cats', 'worms', 'lostBooks', 'fish', 'pets', 'locale', 'regulars', 'curios', 'tokens'];
+const COUNT_TYPES = ['jarCollects', 'specials', 'spins', 'parcels', 'bellRings', 'requests', 'cats', 'worms', 'lostBooks', 'fish', 'pets'];
 const RARITY_WEIGHT = { C: 50, R: 30, E: 15, L: 5 };
+export const OFFLINE_RATE = 0.6;
 export const STORY_HOUR_SEC = 30 * 60;
 export const STORY_HOUR_MAX = 4 * 3600;
 export const PRESTIGE_ROOM = 5; // Poetry Greenhouse must be built to open a new branch
@@ -29,8 +27,6 @@ export class Game extends Emitter {
     this._dirty = true;
     this.jarFull = false;
     this.sessionStart = Date.now();
-    this.festOverride = undefined; // debug: festival id to force (null = none)
-    this._fest = undefined; this._festAt = 0;
     this.ensureQuest();
     this.ensureTasks();
   }
@@ -52,7 +48,7 @@ export class Game extends Emitter {
 
   /* ---------------- jar ---------------- */
   jarSeconds() { return SHOP.jar[this.s.shop.jar].sec; }
-  jarCap() { return Math.max(150, this.steady() * this.jarSeconds() * E.jarPerkMult(this.s)); }
+  jarCap() { return Math.max(150, this.steady() * this.jarSeconds()); }
   jarPending() { return this.pending.reduce((a, b) => a + b, 0); }
 
   update(dt) {
@@ -168,16 +164,15 @@ export class Game extends Emitter {
   constructing() { return this.s.rooms.findIndex((r) => !r.built && r.buildEnd > 0); }
   builtCount() { return this.s.rooms.filter((r) => r.built).length; }
   buildRemaining(i) { return Math.max(0, (this.s.rooms[i].buildEnd - Date.now()) / 1000); }
-  buildSeconds(i) { return ROOMS[i].build * E.buildPerkMult(this.s); }
   cheeseToFinish(i) { return Math.max(1, Math.ceil(this.buildRemaining(i) / 90)); }
 
   startBuild(i) {
     const r = this.s.rooms[i];
     if (r.built || r.buildEnd || this.constructing() >= 0) return false;
     if (!this.spend(ROOMS[i].unlock)) { this.emit('cantAfford', { i, track: 'build' }); return false; }
-    r.buildEnd = Date.now() + this.buildSeconds(i) * 1000;
+    r.buildEnd = Date.now() + ROOMS[i].build * 1000;
     this.emit('buildStart', { i });
-    if (this.buildSeconds(i) <= 0) this.completeBuild(i);
+    if (ROOMS[i].build <= 0) this.completeBuild(i);
     return true;
   }
   finishBuildNow(i) { const r = this.s.rooms[i]; if (!r.built && r.buildEnd) this.completeBuild(i); }
@@ -195,15 +190,7 @@ export class Game extends Emitter {
     this.markDirty();
     this.addXp(10);
     this.emit('built', { i });
-    if (i === ROOMS.length - 1) this.awardTrophy();
     this.checkQuest();
-  }
-  awardTrophy() {
-    const id = this.loc().id;
-    if (this.s.trophies.includes(id)) return;
-    this.s.trophies.push(id);
-    this.markDirty();
-    this.emit('trophy', { loc: this.loc() });
   }
 
   /* ---------------- boosts ---------------- */
@@ -309,7 +296,6 @@ export class Game extends Emitter {
     const inc = this.steady();
     const built = s.rooms.map((r, i) => (r.built ? i : -1)).filter((i) => i >= 0);
     return {
-      mech: this.loc().mechanic.id,
       level: () => {
         let best = null;
         for (const i of built) {
@@ -363,11 +349,10 @@ export class Game extends Emitter {
     if (!q || q.ready) return;
     if (this.questProgress().done) { q.ready = true; this.emit('questReady', q); }
   }
-  claimQuest(mult = 1) {
+  claimQuest() {
     const q = this.s.quest;
     if (!q || !this.questProgress().done) return null;
-    if (mult > 1) this.s.stats.adsWatched++;
-    const got = this.grant(q.reward, mult);
+    const got = this.grant(q.reward);
     this.s.questIdx++;
     this.s.quest = null;
     this.addXp(5);
@@ -381,8 +366,7 @@ export class Game extends Emitter {
     const s = this.s;
     if (!s.tasks) s.tasks = { list: [], sets: 0 };
     if (s.tasks.list.length) return;
-    const ctx = this.taskCtx();
-    const pool = TASK_POOL.filter((t) => (t.minQuest ?? 0) <= s.questIdx && !(t.type === 'specials' && s.questIdx < 3) && (!t.festival || ctx.fest));
+    const pool = TASK_POOL.filter((t) => (t.minQuest ?? 0) <= s.questIdx && !(t.type === 'specials' && s.questIdx < 3));
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     const pickList = [];
     let events = 0;
@@ -395,21 +379,18 @@ export class Game extends Emitter {
     const sets = s.tasks.sets;
     s.tasks.list = pickList.map((t) => ({
       type: t.type,
-      target: t.event ? t.base : Math.round((t.baseFor?.(ctx) ?? t.base) * (1 + Math.min(2, sets * 0.12))),
+      target: t.event ? t.base : Math.round(t.base * (1 + Math.min(2, sets * 0.12))),
       start: s.stats[t.type] || 0,
       claimed: false,
     }));
     this.emit('tasks');
   }
-  taskCtx() { return { loc: this.loc(), fest: this.festival() }; }
   taskInfo(k) {
     const t = this.s.tasks?.list[k];
     if (!t) return null;
     const def = TASK_POOL.find((d) => d.type === t.type);
-    const ctx = this.taskCtx();
-    if (!def || (def.festival && !ctx.fest)) return { ...t, icon: 'check', text: 'Festival over — free tick!', cur: t.target, done: true };
     const cur = Math.min(t.target, (this.s.stats[t.type] || 0) - t.start);
-    return { ...t, icon: def.icon, text: def.text(t.target, ctx), cur, done: cur >= t.target };
+    return { ...t, icon: def.icon, text: def.text(t.target), cur, done: cur >= t.target };
   }
   claimTask(k) {
     const s = this.s;
@@ -421,7 +402,6 @@ export class Game extends Emitter {
     let chest = null;
     if (s.tasks.list.every((t) => t.claimed)) {
       chest = this.grant({ cheese: TASK_CHEST.cheese, coinsSec: TASK_CHEST.coinsSec, book: Math.random() < TASK_CHEST.bookChance });
-      if (this.festival()) { this.addTokens(3); chest.push({ kind: 'tokens', amount: 3, icon: this.festival().token.icon }); }
       s.tasks.sets++;
       s.tasks.list = [];
       this.ensureTasks();
@@ -433,7 +413,7 @@ export class Game extends Emitter {
   /* ---------------- story ---------------- */
   nextStory() {
     const seen = this.s.story.seen;
-    const h = { books: E.booksOwned(this.s), loc: this.loc() };
+    const h = { books: E.booksOwned(this.s) };
     return STORY.find((ch) => ch.when && !seen.includes(ch.id) && ch.when(this.s, h)) || null;
   }
   storySeen(id) { return this.s.story.seen.includes(id); }
@@ -518,7 +498,7 @@ export class Game extends Emitter {
   offlineCapSec() { return SHOP.offline[this.s.shop.offline].sec; }
   offlineEarnings(ms) {
     const sec = Math.min(ms / 1000, this.offlineCapSec());
-    return { sec, amount: E.steadyIncome(this.s) * sec * E.offlineRate(this.s), capped: ms / 1000 > this.offlineCapSec() };
+    return { sec, amount: E.steadyIncome(this.s) * sec * OFFLINE_RATE, capped: ms / 1000 > this.offlineCapSec() };
   }
 
   /* ---------------- specials ---------------- */
@@ -532,254 +512,27 @@ export class Game extends Emitter {
   greetSpecial() { this.s.stats.specials++; this.addXp(3); this.checkQuest(); }
   openedParcel() { this.s.stats.parcels++; this.checkQuest(); }
 
-  /* ---------------- locations & moving ---------------- */
-  loc() { return locationInfo(this.s.branch || 0); }
-  hasPerk(id) { return E.hasPerk(this.s, id); }
+  /* ---------------- prestige ---------------- */
   pendingQuills() { return E.pendingQuills(this.s); }
   canPrestige() { return this.s.rooms[PRESTIGE_ROOM].built && this.pendingQuills() >= 1; }
-  nextBranch() { return locationInfo(this.s.branch + 1); }
-  branch() { return this.loc(); }
-  // Move the library to the next location. Floors & coins start fresh; everything else comes along.
+  nextBranch() { return branchInfo(this.s.branch + 1); }
+  branch() { return branchInfo(this.s.branch); }
   prestige() {
-    if (!this.canPrestige()) return null;
+    if (!this.canPrestige()) return 0;
     const s = this.s;
-    const from = this.loc();
     const gained = this.pendingQuills();
     s.quills += gained;
-    const stamp = s.stamps.includes(from.id) ? null : from;
-    if (stamp) s.stamps.push(from.id);
     s.branch++;
-    const to = this.loc();
-    s.visited[to.id] = (s.visited[to.id] || 0) + 1;
     s.coins = 0; s.jar = 0; s.branchEarned = 0;
-    const head = E.startFloors(s);
-    s.rooms = ROOMS.map((_, i) => E.newRoomState(i < head));
-    for (let i = 0; i < head; i++) s.rooms[i].lvl = head > 1 ? 10 : 1;
+    s.rooms = ROOMS.map((_, i) => E.newRoomState(i === 0));
     s.boosts = [];
     s.quest = null;
     s.stats.prestiges++;
     this.pending = ROOMS.map(() => 0);
-    // Housewarming gift from the new host: cheese + a piece of furniture you don't own yet.
-    const gift = { cheese: 15 + 10 * Math.min(6, s.branch), item: null };
-    this.addCheese(gift.cheese);
-    const pool = FURNITURE.filter((f) => !f.src && !f.festival && !f.tokens && f.rarity !== 'L' && !this.ownsFurniture(f.id) && (!f.loc || f.loc === to.id));
-    const pref = pool.filter((f) => f.loc === to.id);
-    const pick = (pref.length ? pref : pool)[Math.floor(Math.random() * (pref.length || pool.length))];
-    if (pick) { this.grantFurniture(pick.id, true); gift.item = pick; }
     this.markDirty();
     this.ensureQuest();
-    const res = { gained, stamp, from, to, head, gift };
-    this.emit('prestige', res);
-    return res;
-  }
-
-  /* ---------------- souvenirs (3 per location, found through its mechanic) ---------------- */
-  souvenirsLeft(locId = this.loc().id) { return SOUVENIRS.filter((x) => x.loc === locId && !this.s.souvenirs[x.id]); }
-  // Returns the souvenir found (or null when this location's set is complete).
-  findSouvenir(chance = 1) {
-    const left = this.souvenirsLeft();
-    if (!left.length || Math.random() > chance) return null;
-    const sv = left[Math.floor(Math.random() * left.length)];
-    this.s.souvenirs[sv.id] = 1;
-    this.markDirty();
-    this.emit('souvenir', sv);
-    return sv;
-  }
-  localeUsed() { this.s.stats.locale++; this.checkQuest(); }
-
-  /* ---------------- furniture (kept forever) ---------------- */
-  ownsFurniture(id) { return !!this.s.furniture.owned[id]; }
-  // Can this item be bought right now? ('' = yes, otherwise the reason)
-  furnitureLock(f) {
-    if (this.ownsFurniture(f.id)) return 'owned';
-    if (f.src === 'regular') return 'regular';
-    if (f.festival && this.festival()?.id !== f.festival) return 'festival';
-    if (f.loc && f.loc !== this.loc().id) return 'location';
-    return '';
-  }
-  furniturePrice(f) {
-    const deal = this.dailyDeal();
-    return deal && deal.id === f.id && this.s.deal.used ? Math.ceil(f.cost * 0.5) : f.cost;
-  }
-  buyFurniture(id, floor = null) {
-    const f = FURN[id];
-    if (!f || this.furnitureLock(f)) return false;
-    if (f.tokens) { if (!this.spendTokens(f.tokens)) return false; }
-    else if (!this.spendCheese(this.furniturePrice(f))) return false;
-    this.grantFurniture(id, false, floor);
-    return true;
-  }
-  // Own an item. Floor items get placed on `floor` (or the first floor without that slot styled).
-  grantFurniture(id, quiet = false, floor = null) {
-    const f = FURN[id];
-    if (!f || this.ownsFurniture(id)) return false;
-    const fu = this.s.furniture;
-    fu.owned[id] = 1;
-    if (f.slot === 'hat' || f.slot === 'garden') fu[f.slot] = id;
-    else if (SLOTS[f.slot]?.floor) {
-      let i = floor;
-      if (i == null || !this.s.rooms[i]?.built) i = this.s.rooms.findIndex((r, k) => r.built && !this.floorStyle(k)[f.slot]);
-      if (i < 0) i = 0;
-      this.placeFurniture(i, f.slot, id);
-    }
-    this.markDirty();
-    this.emit('furniture', { f, quiet });
-    return true;
-  }
-  floorStyle(i) { return this.s.furniture.floors[ROOMS[i].id] || {}; }
-  placeFurniture(i, slot, id) {
-    const fl = this.s.furniture.floors;
-    const key = ROOMS[i].id;
-    fl[key] = { ...(fl[key] || {}), [slot]: id || null };
-    this.emit('style', { i, slot, id });
-  }
-  equipGlobal(slot, id) { this.s.furniture[slot] = id; this.emit('style', { slot, id }); }
-
-  /* ---------------- regulars ---------------- */
-  regularStep(id) { return this.s.regulars[id] || 0; }
-  // Who drops by next: unfinished stories first; finished friends still pop in for a chat.
-  pickRegular() {
-    const open = REGULARS.filter((r) => this.regularStep(r.id) < 4);
-    const list = open.length && Math.random() < 0.8 ? open : REGULARS;
-    return list[Math.floor(Math.random() * list.length)];
-  }
-  // Plays the next scene; returns { reg, scene, step, finished, gift }.
-  advanceRegular(id) {
-    const reg = REGULAR[id];
-    const step = this.regularStep(id);
-    this.s.stats.regulars++;
-    this.addXp(3);
-    this.checkQuest();
-    if (step >= 4) return { reg, scene: null, step, finished: true };
-    const scene = reg.arc[step];
-    this.s.regulars[id] = step + 1;
-    let gift = null;
-    if (step + 1 >= 4) { this.grantFurniture(reg.gift, true); gift = FURN[reg.gift]; this.markDirty(); }
-    this.emit('regular', { reg, step: step + 1 });
-    return { reg, scene, step: step + 1, finished: step + 1 >= 4, gift };
-  }
-
-  /* ---------------- festivals ---------------- */
-  festival() {
-    if (this.festOverride !== undefined) return this.festOverride;
-    if (this.s.settings.festivals === false) return null;
-    const t = performance.now();
-    if (this._fest === undefined || t - this._festAt > 30000) { this._fest = festivalAt(Date.now(), this.s.created || Date.now()); this._festAt = t; }
-    return this._fest;
-  }
-  festState() {
-    const f = this.festival();
-    const st = this.s.festival;
-    if (f && st.key !== f.key) {
-      Object.assign(st, { key: f.key, tokens: 0, got: 0, claimed: [], gift: '', base: {} });
-      for (const q of FESTIVAL_QUEST) if (q.type !== 'tokens') st.base[q.type] = this.s.stats[q.type] || 0;
-    }
-    return f ? st : null;
-  }
-  addTokens(n) {
-    const st = this.festState(); if (!st) return;
-    st.tokens += n; st.got += n; this.s.stats.tokens += n;
-    this.emit('tokens', n); this.checkQuest();
-  }
-  spendTokens(n) {
-    const st = this.festState();
-    if (!st || st.tokens < n) return false;
-    st.tokens -= n; this.emit('tokens', -n); return true;
-  }
-  festQuest(k) {
-    const f = this.festival(); const st = this.festState();
-    if (!f || !st) return null;
-    const q = FESTIVAL_QUEST[k];
-    const cur = q.type === 'tokens' ? st.got : (this.s.stats[q.type] || 0) - (st.base[q.type] || 0);
-    return { ...q, text: q.text(f), cur: Math.min(cur, q.target), done: cur >= q.target, claimed: st.claimed.includes(k) };
-  }
-  claimFestQuest(k) {
-    const q = this.festQuest(k);
-    if (!q || !q.done || q.claimed) return null;
-    this.s.festival.claimed.push(k);
-    const out = this.grant(q.reward);
-    if (q.reward.fbook) { const b = this.grantFestivalBook(); if (b) out.push({ kind: 'fbook', book: b }); }
-    return out;
-  }
-  festivalBooks(id = this.festival()?.id) { return FESTIVAL_BOOKS.filter((b) => b.festival === id); }
-  grantFestivalBook(id = null) {
-    const list = this.festivalBooks().filter((b) => !this.s.fbooks[b.id]);
-    const b = id ? FESTIVAL_BOOKS.find((x) => x.id === id) : list[0];
-    if (!b || this.s.fbooks[b.id]) return null;
-    this.s.fbooks[b.id] = 1; this.markDirty(); this.emit('fbook', b);
-    return b;
-  }
-  buyFestivalBook(id) {
-    const b = FESTIVAL_BOOKS.find((x) => x.id === id);
-    if (!b || this.s.fbooks[id] || b.festival !== this.festival()?.id || !this.spendTokens(b.tokens)) return null;
-    return this.grantFestivalBook(id);
-  }
-  festGiftReady() { const st = this.festState(); return !!st && st.gift !== dayKey(); }
-  claimFestGift(mult = 1) {
-    const st = this.festState();
-    if (!st || st.gift === dayKey()) return null;
-    st.gift = dayKey();
-    this.addTokens(5 * mult);
-    return [...this.grant({ coinsSec: 300 }, mult), { kind: 'tokens', amount: 5 * mult, icon: this.festival()?.token.icon }];
-  }
-
-  /* ---------------- rewarded-ad offers: cooldowns + daily caps keep them occasional ---------------- */
-  offerReady(key, daily = 99) {
-    const a = this.s.ads; const today = dayKey();
-    if (a.day !== today) { a.day = today; a.used = {}; }
-    return Date.now() >= (a.next[key] || 0) && (a.used[key] || 0) < daily;
-  }
-  useOffer(key, cooldownSec = 0) {
-    const a = this.s.ads;
-    this.offerReady(key);
-    a.used[key] = (a.used[key] || 0) + 1;
-    a.next[key] = Date.now() + cooldownSec * 1000;
-    this.s.stats.adsWatched++;
-  }
-
-  /* ---------------- the delivery crate (ad chest on the doorstep) ---------------- */
-  chestDue() {
-    const c = this.s.adChest;
-    if (!c.next) c.next = Date.now() + AD_CHEST.firstSec * 1000;
-    return this.s.questIdx >= 6 && Date.now() >= c.next && this.offerReady('chest', AD_CHEST.daily);
-  }
-  chestTaken() { const [a, b] = AD_CHEST.everySec; this.s.adChest.next = Date.now() + (a + Math.random() * (b - a)) * 1000; }
-  // ad: full crate. Otherwise a little peek.
-  openChest(ad) {
-    this.chestTaken();
-    this.s.stats.chests++;
-    if (!ad) return this.grant({ coinsSec: AD_CHEST.peekSec });
-    this.useOffer('chest');
-    const c = AD_CHEST;
-    const out = this.grant({ coinsSec: c.coinsSec, cheese: c.cheese[0] + Math.floor(Math.random() * (c.cheese[1] - c.cheese[0] + 1)) });
-    const r = Math.random();
-    if (r < c.itemChance) {
-      const pool = FURNITURE.filter((f) => !f.src && !f.festival && !f.tokens && (f.rarity === 'C' || f.rarity === 'R') && !this.ownsFurniture(f.id) && (!f.loc || f.loc === this.loc().id));
-      const f = pool[Math.floor(Math.random() * pool.length)];
-      if (f) { this.grantFurniture(f.id, true); out.push({ kind: 'item', item: f }); }
-    } else if (r < c.itemChance + c.bookChance) out.push({ kind: 'book', ...this.grantBook() });
-    if (this.festival()) { this.addTokens(3); out.push({ kind: 'tokens', amount: 3, icon: this.festival().token.icon }); }
-    return out;
-  }
-
-  /* ---------------- daily deal: one catalogue item a day, half price after a rewarded ad ---------------- */
-  dailyDeal() {
-    const today = dayKey();
-    if (this.s.deal.day !== today) this.s.deal = { day: today, used: false };
-    const pool = FURNITURE.filter((f) => !f.src && !f.tokens && !f.festival && f.cost > 0 && f.rarity !== 'C' && !this.ownsFurniture(f.id) && (!f.loc || f.loc === this.loc().id));
-    if (!pool.length) return null;
-    let h = 0; for (const ch of today + this.loc().id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return pool[h % pool.length];
-  }
-  unlockDeal() { this.s.deal.used = true; this.useOffer('deal'); this.emit('shop'); }
-
-  /* ---------------- tapping furniture & centrepieces ---------------- */
-  pokeCurio(i) {
-    const amt = Math.max(1, this.roomIncome(i) * 4);
-    this.earn(amt);
-    this.s.stats.curios++;
-    this.checkQuest();
-    return amt;
+    this.emit('prestige', { gained });
+    return gained;
   }
 
   /* ---------------- persistence ---------------- */

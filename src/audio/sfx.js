@@ -124,27 +124,6 @@ export const sfx = {
   wish() { arp([84, 91, 96, 100, 103], 0.05, 0.12); },
   whistle() { tone(1800, { dur: 0.12, vol: 0.06, slide: 1.3 }); tone(2300, { dur: 0.25, vol: 0.06, slide: 0.8, delay: 0.14 }); },
   dialog() { tone(760 + Math.random() * 200, { type: 'triangle', dur: 0.04, vol: 0.035 }); },
-  // World & furniture
-  pop() { tone(900, { dur: 0.08, vol: 0.12, slide: 0.4 }); tone(1600, { dur: 0.05, vol: 0.05, delay: 0.02 }); },
-  cuckoo() { tone(988, { type: 'triangle', dur: 0.22, vol: 0.09 }); tone(784, { type: 'triangle', dur: 0.3, vol: 0.09, delay: 0.26 }); },
-  bong() { const ctx = ready(); if (!ctx) return; voices.box(ctx, buses().sfx, ctx.currentTime, 55, 1.2, 0.2); voices.box(ctx, buses().sfx, ctx.currentTime, 67, 1.2, 0.08); },
-  waltz() { arp([65, 69, 72, 77, 72, 69], 0.16, 0.12, 'piano'); },
-  typewriter() { for (let k = 0; k < 6; k++) tone(2600 + Math.random() * 800, { type: 'square', dur: 0.015, vol: 0.03, delay: k * 0.07 + Math.random() * 0.02 }); tone(2400, { dur: 0.3, vol: 0.05, delay: 0.5 }); },
-  drip() { tone(1900 + Math.random() * 300, { dur: 0.09, vol: 0.03, slide: 0.55 }); },
-  gull() { tone(1500, { type: 'triangle', dur: 0.18, vol: 0.025, slide: 0.65 }); tone(1400, { type: 'triangle', dur: 0.2, vol: 0.02, slide: 0.6, delay: 0.22 }); },
-  snore() { tone(110, { type: 'sawtooth', dur: 0.6, vol: 0.03, slide: 1.4, attack: 0.25 }); },
-  dragon() { tone(140, { type: 'sawtooth', dur: 0.3, vol: 0.04, slide: 1.6 }); arp([84, 88, 91], 0.06, 0.1); },
-  whale() { tone(220, { type: 'sine', dur: 0.9, vol: 0.06, slide: 1.5, attack: 0.25 }); tone(330, { type: 'sine', dur: 1.1, vol: 0.05, slide: 0.7, attack: 0.3, delay: 0.8 }); },
-  firework() {
-    const ctx = ready(); if (!ctx) return;
-    const len = Math.floor(ctx.sampleRate * 0.5);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate); const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3) * (Math.random() < 0.08 ? 1 : 0.4);
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
-    const g = ctx.createGain(); g.gain.value = 0.05;
-    src.connect(lp).connect(g).connect(buses().sfx); src.start();
-  },
   // Ambience
   bird() {
     const base = 2600 + Math.random() * 1400;

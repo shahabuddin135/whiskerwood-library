@@ -17,7 +17,7 @@ export class StoryUI {
         <div class="story-main">
           <div class="story-name"><b></b><small></small></div>
           <div class="story-text"></div>
-          <div class="story-next">tap to continue</div>
+          <div class="story-next">tap to continue ▸</div>
         </div>
         <button class="story-skip">Skip</button>
       </div></div>`);
@@ -38,13 +38,6 @@ export class StoryUI {
     this.tryStart();
   }
 
-  // Play a one-off scene (regulars' stories); not tied to the chapter list or the seen flags.
-  playLines(id, lines, onDone) {
-    if (this.active?.id === id || this.queue.some((q) => q.id === id)) return;
-    this.queue.unshift({ id, lines, onDone });
-    this.tryStart();
-  }
-
   // Called every UI refresh: start automatic chapters and queued ones.
   tick() {
     const ev = this.ui.world.events;
@@ -58,14 +51,11 @@ export class StoryUI {
 
   tryStart() {
     if (this.active || !this.queue.length || modalOpen() || this.ui.sheet.isOpen) return;
-    const next = this.queue.shift();
-    if (typeof next === 'object') this.active = { ...next, k: 0 };
-    else {
-      const ch = STORY.find((c) => c.id === next);
-      if (!ch || this.game.storySeen(next)) return;
-      this.active = { id: next, lines: ch.lines, k: 0 };
-      this.game.markStory(next);
-    }
+    const id = this.queue.shift();
+    const ch = STORY.find((c) => c.id === id);
+    if (!ch || this.game.storySeen(id)) return;
+    this.active = { id, lines: ch.lines, k: 0 };
+    this.game.markStory(id);
     this.el.classList.add('show');
     this.show();
   }
@@ -73,8 +63,8 @@ export class StoryUI {
   show() {
     const { lines, k } = this.active;
     const [who, text] = lines[k];
-    const ch = CHARACTERS[who] || CHARACTERS.pip;
-    this.el.querySelector('.story-portrait').src = portrait(CHARACTERS[who] ? who : 'pip');
+    const ch = CHARACTERS[who];
+    this.el.querySelector('.story-portrait').src = portrait(who);
     this.el.querySelector('.story-name b').textContent = ch.name;
     this.el.querySelector('.story-name small').textContent = ch.role;
     this.el.querySelector('.story-card').dataset.who = who;
@@ -103,11 +93,10 @@ export class StoryUI {
 
   finish() {
     clearInterval(this.typer);
-    const id = this.active?.id; const done = this.active?.onDone;
+    const id = this.active?.id;
     this.active = null;
     this.el.classList.remove('show');
     this.ui.onStoryDone?.(id);
-    done?.();
     setTimeout(() => this.tryStart(), 400);
   }
 }

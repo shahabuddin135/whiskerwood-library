@@ -13,7 +13,7 @@ export async function purchase(id, game) {
   const p = IAP_PRODUCTS.find((x) => x.id === id);
   if (!p) return false;
   if (!window.WWL_IAP?.purchase) {
-    toast('Purchases are available in the mobile app version', '', 'shop');
+    toast('Purchases are available in the mobile app version 📱');
     return false;
   }
   try {
@@ -23,7 +23,7 @@ export async function purchase(id, game) {
     if (p.cheese) game.addCheese(p.cheese);
     if (p.story) game.addStoryHour(p.story);
     game.save();
-    toast('Thank you for supporting the library!', 'gold', 'heart');
+    toast('Thank you for supporting the library! 💖', 'gold');
     return true;
   } catch (e) {
     console.warn('purchase failed', e);

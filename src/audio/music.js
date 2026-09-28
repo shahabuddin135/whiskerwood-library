@@ -138,13 +138,6 @@ export const voices = {
       o.connect(out); o.start(t); o.stop(end);
     });
   },
-  // Soft sleigh-bell shaker (filtered noise).
-  shaker(ctx, dest, t, vel) {
-    const n = ctx.createBufferSource(); n.buffer = noise(ctx);
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6500;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.005); g.gain.setTargetAtTime(0, t + 0.01, 0.05);
-    n.connect(hp).connect(g).connect(dest); n.start(t, Math.random() * 0.5); n.stop(t + 0.3);
-  },
   sub(ctx, dest, t, midi, dur, vel) {
     const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = mtof(midi);
     const g = ctx.createGain();
@@ -164,10 +157,7 @@ export class Music {
     this.bar = 0;
     this.pass = 0;
     this.nextTime = 0;
-    this.flavor = null; // festival layer: 'bells' | 'chimes' | 'spooky'
   }
-
-  setFlavor(f) { this.flavor = f; }
 
   start() {
     whenReady((ctx) => {
@@ -244,17 +234,6 @@ export class Music {
     voices.sub(ctx, dest, t0, bass, spb * 2, night ? 0.1 : 0.13);
 
     if (p.pad) voices.strings(ctx, dest, t0, tones, spb * 3, night ? 0.026 : 0.032);
-
-    // Festival flavour: a light extra layer so the whole soundtrack joins in.
-    if (this.flavor === 'bells') {
-      for (let k = 0; k < 3; k++) voices.shaker(ctx, dest, t0 + k * spb + hum(), k === 0 ? 0.05 : 0.03);
-      if (this.bar % 2 === 0) voices.box(ctx, dest, t0 + spb * 2, tones[tones.length - 1] + 24, spb, 0.05);
-    } else if (this.flavor === 'chimes' && this.bar % 2 === 1) {
-      tones.forEach((m, k) => voices.box(ctx, dest, t0 + spb * 2 + k * spb * 0.18, m + 24, spb, 0.035));
-    } else if (this.flavor === 'spooky' && this.bar % 4 === 3) {
-      voices.box(ctx, dest, t0 + spb, tones[0] + 13, spb * 2, 0.04);
-      voices.box(ctx, dest, t0 + spb * 1.5, tones[0] + 12, spb * 2, 0.035);
-    }
 
     // Melody
     let beat = 0;

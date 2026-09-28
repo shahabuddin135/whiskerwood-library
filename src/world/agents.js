@@ -1,7 +1,7 @@
 // Visitor mice simulation for one library floor.
 import { L, IX, floorTop } from './layout.js';
 import { SEAT_H } from './roomArt.js';
-import { drawMouse, ell, circ, fillRR, star, nameTag, rr } from './draw.js';
+import { drawMouse, ell, circ, fillRR, star } from './draw.js';
 import { FURS, CLOTH, HATS } from '../data/visitors.js';
 import { readTime, spawnInterval } from '../core/economy.js';
 
@@ -59,7 +59,6 @@ export class Visitor {
       case 'pose':
         if (this.special?.type === 'author') return 'sit';
         if (this.special?.type === 'critic') return 'stand';
-        if (this.special?.type === 'regular') return Math.sin(this.t * 1.3) > 0.85 ? 'wave' : 'stand';
         return Math.sin(this.t * 2) > 0.6 ? 'wave' : 'happy';
       case 'request': return Math.sin(this.t * 3) > 0.3 ? 'stand' : 'reach';
       default: return 'stand';
@@ -123,7 +122,7 @@ export class RoomSim {
         return g;
       });
     }
-    this.fanBoost = type === 'author' ? 2.5 : type === 'celeb' ? 1.6 : type === 'critic' || type === 'regular' ? 1 : 1.3;
+    this.fanBoost = type === 'author' ? 2.5 : type === 'celeb' ? 1.6 : type === 'critic' ? 1 : 1.3;
     return v;
   }
 
@@ -149,13 +148,12 @@ export class RoomSim {
     for (let k = this.visitors.length - 1; k >= 0; k--) {
       const v = this.visitors[k];
       v.t += dt;
-      if (v.dozing > 0) v.dozing -= dt;
       if (v.special?.type === 'guard') { this.updateGuard(v, dt, speed); if (v.state === 'gone') this.visitors.splice(k, 1); continue; }
       switch (v.state) {
         case 'enter':
           v.alpha = Math.min(1, v.alpha + dt / 0.4); v.timer -= dt;
           if (v.timer <= 0) {
-            if (v.special) { v.state = 'toStage'; v.target = L.stageX + (v.special.type === 'author' ? -6 : v.special.type === 'regular' ? 40 : 0); }
+            if (v.special) { v.state = 'toStage'; v.target = L.stageX + (v.special.type === 'author' ? -6 : 0); }
             else { v.state = 'toShelf'; const s = Math.floor(Math.random() * shelves); v.target = L.shelves[s] + 12 + Math.random() * 28; }
           }
           break;
@@ -275,25 +273,11 @@ export class RoomSim {
     let y = v.y;
     if (v.special?.type === 'author' && v.state === 'pose') y = L.laneBack - 13;
     const book = v.book || (v.special?.type === 'author' ? '#c0504d' : v.special?.type === 'critic' && v.state === 'pose' ? '#f3ead8' : null);
-    drawMouse(ctx, v.x, y, { ...v.look, dir: v.dir, pose, t: v.t, alpha: v.alpha, book, seed: v.seed, s: v.look.s, sleep: v.dozing > 0 });
+    drawMouse(ctx, v.x, y, { ...v.look, dir: v.dir, pose, t: v.t, alpha: v.alpha, book, seed: v.seed, s: v.look.s });
   }
 
   drawSpecialFx(ctx, v, t) {
     const type = v.special.type;
-    if (type === 'regular') {
-      if (v.alpha < 0.3) return;
-      ctx.globalAlpha = v.alpha;
-      nameTag(ctx, v.x, v.y + 7, v.special.name.split(' ')[0], '#6d5fa3');
-      if (!v.greeted && v.state === 'pose') {
-        const by = v.y - 52 + Math.sin(t * 3) * 2;
-        fillRR(ctx, v.x - 11, by - 8, 22, 15, 6, '#ffffff');
-        ctx.strokeStyle = '#9b6fb0'; ctx.lineWidth = 1.2; rr(ctx, v.x - 11, by - 8, 22, 15, 6); ctx.stroke();
-        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(v.x - 3, by + 6); ctx.lineTo(v.x, by + 11); ctx.lineTo(v.x + 3, by + 6); ctx.fill();
-        for (let k = 0; k < 3; k++) circ(ctx, v.x - 5 + k * 5, by - 0.5 - (Math.floor(t * 4) % 3 === k ? 1.5 : 0), 1.6, '#9b6fb0');
-      }
-      ctx.globalAlpha = 1;
-      return;
-    }
     if (type === 'critic') {
       if (v.state !== 'pose' || v.alpha < 0.5) return;
       const by = v.y - 56 + Math.sin(t * 3) * 2;

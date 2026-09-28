@@ -177,19 +177,6 @@ export function drawMouse(ctx, x, y, o) {
   }
 
   // Head
-  if (o.mole) {
-    // Madame Delvina: velvety, tiny ears, a pink star nose and very small eyes
-    ell(ctx, hx, hy, 8.2, 7.4, fur);
-    ell(ctx, hx + 6.6, hy + 1.6, 5.4, 3.8, fur);
-    ell(ctx, hx - 3, hy - 6.8, 2.2, 1.6, shade(fur, -0.15));
-    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; ell(ctx, hx + 12.2 + Math.cos(a) * 1.6, hy + 1.4 + Math.sin(a) * 1.6, 1.3, 0.7, '#f28ba0', a); }
-    circ(ctx, hx + 12.2, hy + 1.4, 1, '#e06a86');
-    if (!o.shades) { ctx.strokeStyle = EYE; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(hx + 3, hy - 1); ctx.lineTo(hx + 4.8, hy - 1); ctx.stroke(); }
-    if (o.shades) { circ(ctx, hx + 3.8, hy - 1, 2.4, '#1d1b24'); circ(ctx, hx - 0.6, hy - 1.4, 2, '#1d1b24'); ctx.strokeStyle = '#1d1b24'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(hx + 1.4, hy - 1.2); ctx.lineTo(hx + 1.6, hy - 1.2); ctx.stroke(); }
-    drawHat(ctx, o.hat, hx, hy, o.hatCol, t);
-    ctx.restore();
-    return;
-  }
   ell(ctx, hx - 1, hy - 9, 5.2, 5.2, shade(fur, -0.12));
   ell(ctx, hx - 1, hy - 9, 3.2, 3.2, shade(PINK, -0.08));
   ell(ctx, hx, hy, 7.8, 7.6, fur);
@@ -233,11 +220,6 @@ export function drawMouse(ctx, x, y, o) {
     for (let k = 0; k < 4; k++) ctx.quadraticCurveTo(4 + 15 - k * 7.5 - 3.75, hy - 23, 4 + 15 - (k + 1) * 7.5, hy - 20);
     ctx.fill();
     circ(ctx, 4, hy - 29.5, 1, '#4a3a30');
-  }
-  if (o.megaphone) {
-    ctx.save(); ctx.translate(hx + 9, hy + 3); ctx.rotate(-0.25);
-    ctx.fillStyle = '#e0405f'; ctx.beginPath(); ctx.moveTo(0, -1.6); ctx.lineTo(9, -5); ctx.lineTo(9, 5); ctx.lineTo(0, 1.6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#fbf6ea'; ctx.fillRect(8, -5, 1.4, 10); ctx.restore();
   }
   if (o.sack) {
     ell(ctx, -9, -16 - bob, 7, 6.5, '#b9a27c');
@@ -294,15 +276,6 @@ export function drawCat(ctx, x, y, { s = 1, t = 0, mode = 'peek', squint = 0, fl
     [-1, 1].forEach((sx) => { ell(ctx, sx * 11, 14, 6.5, 4.2, FUR); ctx.strokeStyle = DK; ctx.lineWidth = 0.6; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(sx * 11 + k * 2.2, 11.5); ctx.lineTo(sx * 11 + k * 2.2, 14); ctx.stroke(); } });
   }
   ctx.restore();
-}
-
-// A little name ribbon above a regular's head.
-export function nameTag(ctx, x, y, text, col = '#6d5fa3') {
-  ctx.font = '600 6.5px "Fredoka", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const w = ctx.measureText(text).width + 10;
-  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x - w / 2 - 4, y - 5); ctx.lineTo(x - w / 2, y); ctx.lineTo(x - w / 2 - 4, y + 5); ctx.lineTo(x + w / 2 + 4, y + 5); ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w / 2 + 4, y - 5); ctx.closePath(); ctx.fill();
-  fillRR(ctx, x - w / 2, y - 5, w, 10, 2, shade(col, 0.12));
-  ctx.fillStyle = '#fff'; ctx.fillText(text, x, y + 0.5);
 }
 
 export function drawWorm(ctx, x, y, t, s = 1) {
@@ -363,39 +336,6 @@ function drawHat(ctx, hat, hx, hy, col, t) {
     case 'hardhat':
       ctx.fillStyle = '#f5c518'; ctx.beginPath(); ctx.arc(hx, hy - 4.5, 7.8, Math.PI, 0); ctx.fill();
       ell(ctx, hx + 1, hy - 4.3, 10, 1.6, '#e0a800'); break;
-    case 'captain':
-      ctx.fillStyle = '#f4f1ea'; ctx.beginPath(); ctx.arc(hx, hy - 5, 7.8, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#2f4a63'; ctx.fillRect(hx - 7.8, hy - 6, 15.6, 2.6); ell(ctx, hx + 6.5, hy - 4.2, 5.2, 1.4, '#1f2f40');
-      circ(ctx, hx, hy - 9.4, 1.4, '#e3b04b'); break;
-    case 'goggles':
-      ctx.fillStyle = col || '#6b4520'; ctx.beginPath(); ctx.arc(hx, hy - 4.5, 7.6, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#3a3029'; ctx.fillRect(hx - 7.6, hy - 7.5, 15.2, 2);
-      circ(ctx, hx - 2.5, hy - 8.5, 2.8, '#c99a4d'); circ(ctx, hx + 3.2, hy - 8.5, 2.8, '#c99a4d');
-      circ(ctx, hx - 2.5, hy - 8.5, 1.8, '#9fe0e8'); circ(ctx, hx + 3.2, hy - 8.5, 1.8, '#9fe0e8'); break;
-    case 'aviator':
-      ctx.fillStyle = col || '#8a5a3a'; ctx.beginPath(); ctx.arc(hx - 0.5, hy - 3.5, 8.4, Math.PI * 0.95, Math.PI * 2.02); ctx.fill();
-      ell(ctx, hx - 7, hy + 1, 2.4, 4.4, col || '#8a5a3a');
-      circ(ctx, hx - 1, hy - 9, 2.6, '#c99a4d'); circ(ctx, hx + 4, hy - 9, 2.6, '#c99a4d'); circ(ctx, hx - 1, hy - 9, 1.6, '#9fe0e8'); circ(ctx, hx + 4, hy - 9, 1.6, '#9fe0e8'); break;
-    case 'miner':
-      ctx.fillStyle = '#f2c14e'; ctx.beginPath(); ctx.arc(hx, hy - 4.5, 7.8, Math.PI, 0); ctx.fill();
-      ell(ctx, hx + 1, hy - 4.3, 9.6, 1.6, '#d9a23a'); fillRR(ctx, hx + 1, hy - 11, 4, 3.4, 1, '#3a3440'); circ(ctx, hx + 5.2, hy - 9.3, 1.6, '#fff3b0'); break;
-    case 'knight':
-      ctx.fillStyle = '#c9c8d6'; ctx.beginPath(); ctx.arc(hx, hy - 3, 8.4, Math.PI, 0); ctx.fill(); ctx.fillRect(hx - 8.4, hy - 3, 3, 7);
-      ctx.fillStyle = '#6d6880'; ctx.fillRect(hx - 3, hy - 4, 12, 1.4);
-      ctx.fillStyle = col || '#b33f40'; ctx.beginPath(); ctx.moveTo(hx - 2, hy - 11); ctx.quadraticCurveTo(hx - 12, hy - 20, hx - 14, hy - 10); ctx.quadraticCurveTo(hx - 8, hy - 14, hx - 2, hy - 9); ctx.fill(); break;
-    case 'mortar':
-      ctx.fillStyle = '#2a2430'; ctx.beginPath(); ctx.arc(hx, hy - 4.5, 7, Math.PI, 0); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(hx - 10, hy - 10); ctx.lineTo(hx, hy - 14); ctx.lineTo(hx + 10, hy - 10); ctx.lineTo(hx, hy - 6.5); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#e3b04b'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(hx, hy - 10); ctx.lineTo(hx + 7, hy - 8); ctx.lineTo(hx + 7, hy - 3); ctx.stroke(); circ(ctx, hx + 7, hy - 2.4, 1, '#e3b04b'); break;
-    case 'santahat':
-      ctx.fillStyle = '#d9534f'; ctx.beginPath(); ctx.moveTo(hx - 7.5, hy - 5); ctx.quadraticCurveTo(hx - 2, hy - 20, hx + 9, hy - 14); ctx.lineTo(hx + 7.5, hy - 5); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#fff6ea'; ctx.fillRect(hx - 8, hy - 6.5, 16, 3); circ(ctx, hx + 9.5, hy - 14, 2.4, '#fff6ea'); break;
-    case 'witchhat':
-      ell(ctx, hx, hy - 5.5, 12, 2.6, '#3a3440'); ctx.fillStyle = '#3a3440'; ctx.beginPath(); ctx.moveTo(hx - 6, hy - 6); ctx.quadraticCurveTo(hx - 1, hy - 18, hx + 5, hy - 26); ctx.lineTo(hx + 6, hy - 6); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#9ccf5a'; ctx.fillRect(hx - 6, hy - 9, 12, 2); break;
-    case 'partyhat':
-      ctx.fillStyle = '#f28b82'; ctx.beginPath(); ctx.moveTo(hx - 5.5, hy - 6); ctx.lineTo(hx + 1, hy - 21); ctx.lineTo(hx + 6, hy - 6); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#ffd24a'; for (let k = 0; k < 3; k++) circ(ctx, hx - 2 + k * 2.2, hy - 9 - k * 4, 1, '#ffd24a'); circ(ctx, hx + 1, hy - 21.5, 2.2, '#9ec5f0'); break;
     case 'bandit':
       fillRR(ctx, hx - 6, hy - 3.6, 13.5, 4.2, 2, '#1d1b24');
       ctx.fillStyle = '#1d1b24'; ctx.beginPath(); ctx.moveTo(hx - 5, hy - 2); ctx.lineTo(hx - 10, hy - 5 + Math.sin(t * 12) * 1.2); ctx.lineTo(hx - 9, hy + 0.5); ctx.fill();

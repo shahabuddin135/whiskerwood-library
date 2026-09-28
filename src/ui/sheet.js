@@ -1,18 +1,13 @@
-// Bottom sheet for one library floor: its upgrades, and a Style tab to decorate it with furniture.
-import { $, h, haptic, toast } from './dom.js';
-import { icon } from './icons.js';
-import { thumb } from './thumbs.js';
+// Bottom sheet with the upgrades of one library floor.
+import { $, h, ICO, haptic, toast } from './dom.js';
 import { ROOMS, DECOR, BOOKS, LIMITS, RARITY } from '../data/rooms.js';
-import { FURNITURE, FURN, SLOTS, FLOOR_SLOTS } from '../data/furniture.js';
 import * as E from '../core/economy.js';
 import { fmt } from '../core/format.js';
 import { sfx } from '../audio/sfx.js';
 import { Ads } from '../ads/ads.js';
 
+const SEAT_ICON = { armchair: '🛋️', beanbag: '🧸', cafe: '☕', trunk: '🧳', wingback: '💺', bench: '🪑', stool: '🔭', throne: '👑', piano: '🎹', royal: '🛋️' };
 const SEAT_NAME = { armchair: 'Armchairs', beanbag: 'Beanbags', cafe: 'Café Tables', trunk: 'Sea Trunks', wingback: 'Wingback Chairs', bench: 'Garden Benches', stool: 'Star Stools', throne: 'Velvet Thrones', piano: 'Piano Benches', royal: 'Royal Sofas' };
-const DECOR_ICON = ['rug', 'lamp', 'plant', 'frame', 'curio'];
-const SLOT_DECOR = { rug: 0, lamp: 1, plant: 2, art: 3, center: 4 };
-const TRACK_REACT = { lvl: 'lvl', seats: 'seats', shelves: 'shelves', staff: 'staff' };
 
 export class RoomSheet {
   constructor(ui) {
@@ -21,14 +16,13 @@ export class RoomSheet {
     this.el = $('#sheet');
     this.i = -1;
     this.mode = 1;
-    this.tab = 'up';
     this.isOpen = false;
     this.refs = null;
   }
 
-  open(i, tab = 'up') {
+  open(i) {
     if (!this.game.s.rooms[i]?.built) return;
-    this.i = i; this.tab = tab;
+    this.i = i;
     this.render();
     this.el.classList.add('open');
     this.el.setAttribute('aria-hidden', 'false');
@@ -55,28 +49,14 @@ export class RoomSheet {
     const built = this.builtRooms();
     const pos = built.indexOf(i);
     this.el.innerHTML = '';
-    const head = h(`<div class="sheet-head">
-        <button class="arrow-btn" data-nav="-1" ${pos <= 0 ? 'disabled' : ''} aria-label="Previous floor">${icon('arrowL')}</button>
-        <div class="title"><h2>${def.name}</h2><div class="sub">${def.genre} · Floor ${i + 1} · ${g.loc().name}</div></div>
-        <button class="arrow-btn" data-nav="1" ${pos >= built.length - 1 ? 'disabled' : ''} aria-label="Next floor">${icon('arrowR')}</button>
-        <button class="close-btn" aria-label="Close">${icon('close')}</button>
-      </div>`);
-    const tabs = h(`<div class="sheet-tabs"><button data-tab="up" class="${this.tab === 'up' ? 'on' : ''}">${icon('hammer')}Upgrades</button><button data-tab="style" class="${this.tab === 'style' ? 'on' : ''}">${icon('chair')}Style</button></div>`);
-    const body = h('<div class="sheet-body"></div>');
-    this.el.append(head, tabs, body);
-    head.querySelector('.close-btn').addEventListener('click', () => this.close());
-    head.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
-      const list = this.builtRooms(); const k = list.indexOf(this.i) + +b.dataset.nav;
-      if (list[k] != null) { sfx.tap(); this.i = list[k]; this.render(); this.frame(); }
-    }));
-    tabs.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); this.tab = b.dataset.tab; this.render(); }));
-    if (this.tab === 'style') { this.renderStyle(body); this.refs = null; return; }
-    this.renderUpgrades(body);
-  }
-
-  renderUpgrades(body) {
-    const i = this.i; const def = ROOMS[i]; const g = this.game;
-    body.innerHTML = `
+    const root = h(`<div style="display:contents">
+      <div class="sheet-head">
+        <button class="arrow-btn" data-nav="-1" ${pos <= 0 ? 'disabled' : ''}>‹</button>
+        <div class="title"><h2>${def.name}</h2><div class="sub">${def.genre} · Floor ${i + 1}</div></div>
+        <button class="arrow-btn" data-nav="1" ${pos >= built.length - 1 ? 'disabled' : ''}>›</button>
+        <button class="close-btn">✕</button>
+      </div>
+      <div class="sheet-body">
         <div class="stats">
           <div><b data-r="inc">0</b><small>coins / sec</small></div>
           <div><b data-r="vpm">0</b><small>visitors / min</small></div>
@@ -84,65 +64,49 @@ export class RoomSheet {
         </div>
         <div class="milestone"><span data-r="ms"></span><div class="bar"><i data-r="msbar"></i></div></div>
         <div class="buy-mode"><button data-mode="1">×1</button><button data-mode="10">×10</button><button data-mode="max">MAX</button></div>
-        ${this.rowHtml('lvl', 'books', 'Book Collection')}
-        ${this.rowHtml('seats', 'chair', SEAT_NAME[def.seat] || 'Seats')}
-        ${this.rowHtml('shelves', 'shelf', 'Bookshelves')}
-        ${this.rowHtml('staff', 'mouse', 'Librarian')}
+        ${this.rowHtml('lvl', '📚', 'Book Collection')}
+        ${this.rowHtml('seats', SEAT_ICON[def.seat] || '🪑', SEAT_NAME[def.seat] || 'Seats')}
+        ${this.rowHtml('shelves', '🗄️', 'Bookshelves')}
+        ${this.rowHtml('staff', '👓', 'Librarian')}
         <div class="section-title">Décor <small>each boosts this floor's income</small></div>
-        <div class="decor-grid">${DECOR.map((d, k) => `<button class="decor" data-decor="${k}"><span class="d-ico">${icon(DECOR_ICON[k])}</span><span class="d-name">${k === 4 ? def.centerName : d.name}</span><span class="d-cost" data-r="dc${k}"></span></button>`).join('')}</div>
+        <div class="decor-grid">${DECOR.map((d, k) => `<button class="decor" data-decor="${k}"><span class="d-ico">${d.icon}</span><span class="d-name">${k === 4 ? def.centerName : d.name}</span><span class="d-cost" data-r="dc${k}"></span></button>`).join('')}</div>
         <div class="section-title">${def.genre} Collection <small data-r="bookbonus"></small></div>
-        <div class="books-row" data-r="books"></div>`;
+        <div class="books-row" data-r="books"></div>
+      </div></div>`);
+    this.el.appendChild(root.firstElementChild);
+    this.el.appendChild(root.lastElementChild);
+
+    const q = (sel) => this.el.querySelector(sel);
     this.refs = {};
-    body.querySelectorAll('[data-r]').forEach((n) => { this.refs[n.dataset.r] = n; });
-    body.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); this.mode = b.dataset.mode === 'max' ? 'max' : +b.dataset.mode; this.update(true); }));
-    body.querySelectorAll('.row').forEach((row) => {
+    this.el.querySelectorAll('[data-r]').forEach((n) => { this.refs[n.dataset.r] = n; });
+    q('.close-btn').addEventListener('click', () => this.close());
+    this.el.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
+      const list = this.builtRooms(); const k = list.indexOf(this.i) + +b.dataset.nav;
+      if (list[k] != null) { sfx.tap(); this.i = list[k]; this.render(); this.frame(); }
+    }));
+    this.el.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); this.mode = b.dataset.mode === 'max' ? 'max' : +b.dataset.mode; this.update(true); }));
+    this.el.querySelectorAll('.row').forEach((row) => {
       const track = row.dataset.track;
       const btn = row.querySelector('.buy');
       this.bindHold(btn, () => this.buy(track, row));
       row.querySelector('.free-ad').addEventListener('click', () => this.freeUpgrade(track));
     });
-    body.querySelectorAll('[data-decor]').forEach((b) => b.addEventListener('click', () => {
+    this.el.querySelectorAll('[data-decor]').forEach((b) => b.addEventListener('click', () => {
       const k = +b.dataset.decor;
-      if (g.s.rooms[this.i].decor[k]) { toast(`${k === 4 ? def.centerName : DECOR[k].name} is already here — restyle it in the Style tab`, '', DECOR_ICON[k]); return; }
-      if (g.buy(this.i, `decor${k}`)) { sfx.buy(); sfx.sparkle(); haptic('medium'); this.ui.world.react(`decor${k}`, this.i); this.update(true); }
+      if (g.s.rooms[this.i].decor[k]) { toast(`${k === 4 ? def.centerName : DECOR[k].name} is already here ✨`); return; }
+      if (g.buy(this.i, `decor${k}`)) { sfx.buy(); sfx.sparkle(); haptic('medium'); this.update(true); }
       else { sfx.error(); b.animate([{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], 200); }
     }));
     this.renderBooks();
     this.update(true);
   }
 
-  // Style tab: pick which furniture this floor uses (default, or anything you own).
-  renderStyle(body) {
-    const i = this.i; const g = this.game; const r = g.s.rooms[i]; const def = ROOMS[i];
-    const cur = g.floorStyle(i);
-    const ownedAny = FURNITURE.some((f) => SLOTS[f.slot].floor && g.ownsFurniture(f.id));
-    let html = `<div class="flavor" style="margin:2px 0 8px">Furniture you own can go on any floor, in any location. Tap to swap.</div>`;
-    for (const slot of FLOOR_SLOTS) {
-      const owned = FURNITURE.filter((f) => f.slot === slot && g.ownsFurniture(f.id));
-      const needDecor = SLOT_DECOR[slot];
-      const locked = needDecor != null && !r.decor[needDecor];
-      const defName = slot === 'center' ? def.centerName : slot === 'seat' ? SEAT_NAME[def.seat] : 'Floor default';
-      html += `<div class="style-slot"><h4>${icon(SLOTS[slot].icon)}${SLOTS[slot].name}${locked ? `<small class="muted" style="font-weight:500">— buy the ${DECOR[needDecor].name.toLowerCase()} décor to show it</small>` : ''}</h4>
-        <div class="style-row"><button class="style-opt default ${!cur[slot] ? 'on' : ''}" data-slot="${slot}" data-id=""><span class="def">${defName}</span>Default</button>
-        ${owned.map((f) => `<button class="style-opt ${cur[slot] === f.id ? 'on' : ''}" data-slot="${slot}" data-id="${f.id}"><img src="${thumb(f.id, 68, 52)}" alt="">${f.name}</button>`).join('')}
-        ${owned.length ? '' : '<span class="style-empty">Nothing yet — the Shop has plenty.</span>'}</div></div>`;
-    }
-    if (!ownedAny) html += '<button class="btn gold" data-shop>Visit the furniture shop</button>';
-    body.innerHTML = html;
-    body.querySelectorAll('[data-slot]').forEach((b) => b.addEventListener('click', () => {
-      sfx.buy(); g.placeFurniture(i, b.dataset.slot, b.dataset.id || null);
-      if (b.dataset.id) this.ui.world.react('furniture', i);
-      this.renderStyle(body);
-    }));
-    body.querySelector('[data-shop]')?.addEventListener('click', () => { this.close(); this.ui.screens.shop('furniture'); });
-  }
-
-  rowHtml(track, ic, title) {
+  rowHtml(track, icon, title) {
     return `<div class="row" data-track="${track}">
-      <div class="r-ico">${icon(ic)}</div>
+      <div class="r-ico">${icon}</div>
       <div class="r-body"><div class="r-title">${title} <em data-r="${track}Badge"></em></div><div class="r-desc" data-r="${track}Desc"></div></div>
       <button class="buy" data-r="${track}Btn"><small data-r="${track}Lbl"></small><span class="cost"><span class="ico ico-coin"></span><span data-r="${track}Cost"></span></span></button>
-      <button class="free-ad" data-r="${track}Free">FREE</button>
+      <button class="free-ad" data-r="${track}Free">📺 FREE</button>
     </div>`;
   }
 
@@ -151,10 +115,9 @@ export class RoomSheet {
     const books = BOOKS.filter((b) => b.room === this.i);
     this.refs.books.innerHTML = books.map((b) => {
       const n = s.album[b.id] || 0;
-      return n ? `<button class="book ${b.rarity}" data-book="${b.id}" style="background:${b.color}"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span></button>`
-        : `<button class="book unknown" data-book="${b.id}">?</button>`;
+      return n ? `<div class="book ${b.rarity}" style="background:${b.color}"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span></div>`
+        : '<div class="book unknown">?</div>';
     }).join('');
-    this.refs.books.querySelectorAll('[data-book]').forEach((el) => el.addEventListener('click', () => { const b = BOOKS.find((x) => x.id === el.dataset.book); sfx.open(); this.ui.screens.bookDetail(b, !!s.album[b.id]); }));
     const owned = books.filter((b) => s.album[b.id]).length;
     this.refs.bookbonus.textContent = `${owned}/5 · ×${E.albumMult(s, this.i).toFixed(1)} income`;
   }
@@ -190,7 +153,6 @@ export class RoomSheet {
     if (ok) {
       sfx.buy(); haptic('light');
       row?.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], 180);
-      if (TRACK_REACT[track]) this.ui.world.react(TRACK_REACT[track], this.i);
     } else {
       sfx.error();
       row?.animate([{ transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'none' }], 220);
@@ -207,7 +169,7 @@ export class RoomSheet {
       this.game.s.stats.adsWatched++;
       this.game.useFreeUpgrade(i, track);
       sfx.reward(); haptic('medium');
-      toast('Free upgrade!', 'gold', 'gift');
+      toast('Free upgrade! 🎁', 'gold');
     }
     this.update(true);
   }
@@ -224,7 +186,7 @@ export class RoomSheet {
     const next = E.nextMilestone(r.lvl); const prev = E.prevMilestone(r.lvl);
     const mi = E.milestoneCount(r.lvl);
     const nextBook = mi < E.BOOK_MILESTONES && !s.album[`${ROOMS[i].id}-${mi}`] ? BOOKS.find((b) => b.id === `${ROOMS[i].id}-${mi}`) : null;
-    R.ms.innerHTML = next ? `Lv ${r.lvl} → <b>×2 income</b>${nextBook ? ` + a new book: <i>${nextBook.title}</i>` : ''} at Lv ${next}` : `Lv ${r.lvl} · all milestones reached!`;
+    R.ms.innerHTML = next ? `Lv ${r.lvl} → <b>×2 income</b>${nextBook ? ` + 📕 <i>${nextBook.title}</i>` : ''} at Lv ${next}` : `Lv ${r.lvl} · all milestones reached!`;
     R.msbar.style.width = next ? `${((r.lvl - prev) / (next - prev)) * 100}%` : '100%';
     this.el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', String(this.mode) === b.dataset.mode));
 
@@ -255,5 +217,3 @@ export class RoomSheet {
     });
   }
 }
-
-export { FURN };

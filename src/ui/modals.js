@@ -1,6 +1,5 @@
 // Modal dialogs with a gentle queue so pop-ups never stack on top of each other.
 import { $, h } from './dom.js';
-import { icon } from './icons.js';
 import { sfx } from '../audio/sfx.js';
 
 let current = null;
@@ -8,7 +7,7 @@ const queue = [];
 
 export function modalOpen() { return !!current; }
 
-// opts: { title, icon, body (html|Node), buttons:[{label, cls, onClick, keepOpen, disabled}], wide, onClose, dismissable, urgent, row }
+// opts: { title, body (html|Node), buttons:[{label, cls, onClick, keepOpen, disabled}], wide, onClose, dismissable, urgent, row }
 export function openModal(opts) {
   if (current && !opts.replace) {
     if (opts.urgent) queue.unshift(opts); else queue.push(opts);
@@ -16,8 +15,8 @@ export function openModal(opts) {
   }
   if (current && opts.replace) closeModal(true);
   const back = h(`<div class="modal-back"><div class="modal ${opts.wide ? 'wide' : ''} ${opts.cls || ''}">
-      ${opts.title ? `<div class="modal-ribbon">${opts.icon ? icon(opts.icon) : ''}<span>${opts.title}</span></div>` : ''}
-      ${opts.dismissable === false ? '' : `<button class="modal-close" aria-label="Close">${icon('close')}</button>`}
+      ${opts.title ? `<div class="modal-ribbon">${opts.title}</div>` : ''}
+      ${opts.dismissable === false ? '' : '<button class="modal-close" aria-label="Close">✕</button>'}
       <div class="modal-body"></div>
       <div class="modal-btns ${opts.row ? 'row2' : ''}"></div>
     </div></div>`);

@@ -1,9 +1,6 @@
 // Pure economy math. No DOM access so it can run inside the Node balance simulator.
 import { ROOMS, MILESTONES, LIMITS, GROWTH, DECOR, BOOKS, BOOK_BONUS, SET_BONUS } from '../data/rooms.js';
-import { locationInfo, LOCATIONS, SOUVENIR_BONUS, TROPHY_BONUS } from '../data/locations.js';
-import { furnitureBonus } from '../data/furniture.js';
-import { REGULAR_BONUS } from '../data/regulars.js';
-import { FESTIVAL_BOOK_BONUS } from '../data/festivals.js';
+import { branchInfo } from '../data/branches.js';
 
 export const QUILL_BONUS = 0.1; // +10% income per Golden Quill
 export const BOOK_MILESTONES = 5; // the first 5 milestones (Lv 10/25/50/100/150) each deliver a book
@@ -44,36 +41,12 @@ export function roomBaseIncome(state, i, r = state.rooms[i]) {
   return d.base * r.lvl * Math.pow(2, milestoneCount(r.lvl)) * seatMult(r) * shelfMult(r) * staffMult(r) * decorMult(r) * albumMult(state, i);
 }
 
-/* ---------------- legacy: everything that carries over between locations ---------------- */
-const count = (o) => (o ? Object.values(o).filter(Boolean).length : 0);
-export const regularsDone = (state) => Object.values(state.regulars || {}).filter((n) => n >= 4).length;
-
-// Furniture, souvenirs, trophies, finished regular stories and festival books.
-export function legacyBonus(state) {
-  return furnitureBonus(state.furniture?.owned)
-    + SOUVENIR_BONUS * count(state.souvenirs)
-    + TROPHY_BONUS * (state.trophies?.length || 0)
-    + REGULAR_BONUS * regularsDone(state)
-    + FESTIVAL_BOOK_BONUS * count(state.fbooks);
-}
-
-// Passport stamps: leaving a location for the first time stamps it; each stamp grants its perk forever.
-export function hasPerk(state, perk) {
-  return (state.stamps || []).some((id) => LOCATIONS.find((l) => l.id === id)?.perk.id === perk);
-}
-export const offlineRate = (state) => (hasPerk(state, 'seaBreeze') ? 0.8 : 0.6);
-export const jarPerkMult = (state) => (hasPerk(state, 'glowJar') ? 1.5 : 1);
-export const buildPerkMult = (state) => (hasPerk(state, 'swiftScaffolds') ? 0.5 : 1);
-export const quillPerkMult = (state) => (hasPerk(state, 'tailwind') ? 1.25 : 1);
-export const startFloors = (state) => (hasPerk(state, 'movingVan') ? 3 : 1);
-
-// Multipliers that last forever.
+// Multipliers that last forever (this branch).
 export function permanentMult(state) {
   return (1 + QUILL_BONUS * (state.quills || 0))
-    * locationInfo(state.branch || 0).mult
+    * branchInfo(state.branch || 0).mult
     * (1 + REP_BONUS * ((state.rep || 1) - 1))
-    * Math.pow(2, state.shop?.perm || 0)
-    * (1 + legacyBonus(state));
+    * Math.pow(2, state.shop?.perm || 0);
 }
 
 // Timed boosts (ads, royal visits). Returns multiplier for room i (or global when i == null).
@@ -174,7 +147,7 @@ export function quillsForEarnings(earned) {
 }
 
 export function pendingQuills(state) {
-  return Math.max(0, Math.floor(quillsForEarnings(state.branchEarned || 0) * quillPerkMult(state)));
+  return Math.max(0, quillsForEarnings(state.branchEarned || 0));
 }
 
 /* ---------------- Reputation ---------------- */

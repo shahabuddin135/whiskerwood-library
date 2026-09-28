@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="description" content="Whiskerwood Library — a cozy idle game where mice run a library. Expand floors, collect books, travel to new places and welcome royal guests." />
+  <meta name="description" content="Whiskerwood Library — a cozy idle game where mice run a library. Expand floors, collect books and welcome royal guests." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon-192.png" />
@@ -18,47 +18,41 @@
 
   <div id="hud">
     <div class="hud-row">
-      <button class="plate coins-plate" id="coinPill" aria-label="Coins">
+      <button class="pill coins-pill" id="coinPill" aria-label="Coins">
         <span class="ico ico-coin"></span>
         <span class="pill-stack"><b id="coins">0</b><small id="ips">+0/s</small></span>
       </button>
-      <button class="plate cheese-plate" id="cheesePill" aria-label="Golden cheese">
+      <button class="pill cheese-pill" id="cheesePill" aria-label="Golden cheese">
         <span class="ico ico-cheese"></span><b id="cheese">0</b><i class="plus">+</i>
       </button>
       <button class="rep" id="repBtn" aria-label="Reputation">
-        <svg viewBox="0 0 48 48" class="rep-ribbon"><path d="M16 30l-6 16 7-4 4 5 4-14zM32 30l6 16-7-4-4 5-4-14z" fill="#c0504d" stroke="#4a3121" stroke-width="1.4" stroke-linejoin="round"/></svg>
-        <svg viewBox="0 0 40 40" class="rep-dial"><circle cx="20" cy="20" r="17" class="rep-track" /><circle cx="20" cy="20" r="17" class="rep-ring" id="repRing" /></svg>
-        <span class="rep-lvl" id="repLvl">1</span>
+        <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" class="rep-track" /><circle cx="20" cy="20" r="17" class="rep-ring" id="repRing" /></svg>
+        <span class="rep-star">★</span><span id="repLvl" class="rep-lvl">1</span>
       </button>
-      <button class="cog" id="settingsBtn" aria-label="Settings" data-icon="gear"></button>
+      <button class="round-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
     </div>
-    <div class="quest-wrap">
-      <button id="quest" class="quest" aria-label="Current quest">
-        <span class="q-ico" data-icon="scroll"></span>
-        <span class="q-body"><span class="q-text" id="qText">…</span><span class="q-bar"><i id="qBar"></i></span></span>
-        <span class="q-reward" id="qReward"></span>
-      </button>
-      <button id="questAd" class="quest-ad" aria-label="Double the quest reward with an ad">×2</button>
-    </div>
+    <button id="quest" class="quest">
+      <span class="q-ico">📜</span>
+      <span class="q-body"><span class="q-text" id="qText">…</span><span class="q-bar"><i id="qBar"></i></span></span>
+      <span class="q-reward" id="qReward"></span>
+    </button>
     <div id="tasks" class="tasks"></div>
     <div id="boostChips"></div>
   </div>
 
   <div id="railRight" class="rail rail-right">
-    <button class="spine sp-plum" id="festBtn" hidden><span class="sp-ico" data-icon="festival"></span><small id="festLabel">Festival</small><i class="dot"></i></button>
-    <button class="spine sp-violet story" id="storyBtn"><span class="sp-ico" data-icon="hourglass"></span><em>×2</em><small id="storyTime">Story</small></button>
-    <button class="spine sp-red" id="dailyBtn"><span class="sp-ico" data-icon="gift"></span><small>Daily</small><i class="dot"></i></button>
-    <button class="spine sp-teal" id="albumBtn"><span class="sp-ico" data-icon="books"></span><small>Collect</small><i class="dot"></i></button>
+    <button class="rail-btn story" id="storyBtn"><span class="rb-ico">📖</span><em>×2</em><small id="storyTime">Story Hour</small></button>
+    <button class="rail-btn" id="dailyBtn"><span class="rb-ico">🎁</span><small>Daily</small><i class="dot"></i></button>
+    <button class="rail-btn" id="albumBtn"><span class="rb-ico">📚</span><small>Album</small><i class="dot"></i></button>
   </div>
   <div id="railLeft" class="rail rail-left">
-    <button class="spine sp-green" id="floorsBtn"><span class="sp-ico" data-icon="tower"></span><small>Floors</small></button>
-    <button class="spine sp-blue" id="topBtn"><span class="sp-ico" data-icon="hammer"></span><small>Build</small><i class="dot"></i></button>
-    <button class="spine sp-ochre" id="crateBtn" hidden><span class="sp-ico" data-icon="parcel"></span><small>Crate</small><i class="dot"></i></button>
+    <button class="rail-btn" id="floorsBtn"><span class="rb-ico">🏛️</span><small>Floors</small></button>
+    <button class="rail-btn" id="topBtn"><span class="rb-ico">🎈</span><small>Build</small><i class="dot"></i></button>
   </div>
 
   <nav id="bottom">
-    <button class="nav" id="navUpgrade"><span class="nav-ico" data-icon="hammer"></span><small>Upgrade</small><i class="dot"></i></button>
-    <button class="nav" id="navShop"><span class="nav-ico" data-icon="shop"></span><small>Shop</small><i class="dot"></i></button>
+    <button class="nav" id="navUpgrade"><span>🔨</span><small>Upgrade</small><i class="dot"></i></button>
+    <button class="nav" id="navShop"><span>🛒</span><small>Shop</small></button>
     <div class="jar-wrap">
       <button id="jarBtn" aria-label="Collect coins">
         <svg viewBox="0 0 100 112" class="jar-svg">
@@ -68,35 +62,32 @@
             <pattern id="coinPat" width="18" height="11" patternUnits="userSpaceOnUse"><ellipse cx="9" cy="6" rx="7.5" ry="4" fill="#ffd257" stroke="#d99423" stroke-width="1.2" /></pattern>
           </defs>
           <g clip-path="url(#jarClip)">
-            <rect x="0" y="0" width="100" height="112" fill="rgba(255,255,255,0.22)" />
+            <rect x="0" y="0" width="100" height="112" fill="rgba(255,255,255,0.18)" />
             <g id="jarFill" transform="translate(0,76)">
               <rect x="0" y="30" width="100" height="90" fill="url(#coinGrad)" />
               <rect x="0" y="30" width="100" height="90" fill="url(#coinPat)" opacity="0.8" />
               <ellipse cx="50" cy="30" rx="40" ry="5" fill="#fff0a6" />
             </g>
           </g>
-          <path d="M24 32 Q17 38 17 50 L17 93 Q17 106 30 106 L70 106 Q83 106 83 93 L83 50 Q83 38 76 32 Z" fill="none" stroke="#4a3121" stroke-width="3" opacity="0.55" />
-          <path d="M24 32 Q17 38 17 50 L17 93 Q17 106 30 106 L70 106 Q83 106 83 93 L83 50 Q83 38 76 32 Z" fill="none" stroke="#fff" stroke-width="2.2" opacity="0.9" />
+          <path d="M24 32 Q17 38 17 50 L17 93 Q17 106 30 106 L70 106 Q83 106 83 93 L83 50 Q83 38 76 32 Z" fill="none" stroke="#fff" stroke-width="4" opacity="0.95" />
           <path d="M26 50 L26 90" stroke="rgba(255,255,255,0.7)" stroke-width="4" stroke-linecap="round" />
-          <rect x="22" y="16" width="56" height="16" rx="5" fill="#b5523b" stroke="#4a3121" stroke-width="2" />
-          <rect x="24" y="18" width="52" height="4" rx="2" fill="#d46a50" />
+          <rect x="22" y="16" width="56" height="16" rx="5" fill="#b5523b" />
+          <rect x="22" y="16" width="56" height="5" rx="2.5" fill="#d46a50" />
           <rect x="30" y="27" width="40" height="6" rx="2" fill="#8e3b2d" />
-          <path d="M40 60 h20 v14 h-20z" fill="#fff3dc" stroke="#4a3121" stroke-width="1.5" opacity="0.92" />
-          <path d="M44 65 h12 M44 69 h8" stroke="#8a5a3a" stroke-width="1.2" />
         </svg>
         <span class="jar-label" id="jarAmt">0</span>
         <span class="jar-full" id="jarFull">FULL!</span>
       </button>
-      <button id="jarAd" class="jar-ad">×2</button>
+      <button id="jarAd" class="jar-ad">📺 ×2</button>
     </div>
-    <button class="nav" id="navWheel"><span class="nav-ico" data-icon="wheel"></span><small>Wheel</small><i class="dot"></i></button>
-    <button class="nav" id="navBranch"><span class="nav-ico" data-icon="map"></span><small>Map</small><i class="dot"></i></button>
+    <button class="nav" id="navWheel"><span>🎡</span><small>Wheel</small><i class="dot"></i></button>
+    <button class="nav" id="navBranch"><span>🌿</span><small>Branch</small><i class="dot"></i></button>
   </nav>
 
   <div id="zoomCtl" class="zoom-ctl">
-    <button id="zoomIn" aria-label="Zoom in" data-icon="plus"></button>
-    <button id="zoomFit" aria-label="Reset zoom" data-icon="fit"></button>
-    <button id="zoomOut" aria-label="Zoom out" data-icon="minus"></button>
+    <button id="zoomIn" aria-label="Zoom in">＋</button>
+    <button id="zoomFit" aria-label="Reset zoom">⤢</button>
+    <button id="zoomOut" aria-label="Zoom out">－</button>
   </div>
   <canvas id="thief" width="160" height="160" aria-label="Catch the thief!"></canvas>
 
@@ -105,9 +96,9 @@
   <div id="toasts"></div>
   <div id="modalRoot"></div>
   <div id="fxLayer"></div>
-  <div id="pointer"></div>
+  <div id="pointer">👆</div>
 
-  <div id="loading"><div class="ld-card"><div class="ld-book"><i></i><i></i><i></i></div><div class="ld-title">Whiskerwood Library</div><div class="ld-sub">Dusting the bookshelves…</div></div></div>
+  <div id="loading"><div class="ld-card"><div class="ld-mouse">🐭📚</div><div class="ld-title">Whiskerwood Library</div><div class="ld-sub">Dusting the bookshelves…</div></div></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

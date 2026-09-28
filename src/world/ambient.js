@@ -3,7 +3,6 @@ import { W, BX0, BX1, FH, floorTop } from './layout.js';
 import { ell, circ, rng, star, drawMouse, fillRR, shade } from './draw.js';
 import { FURS, CLOTH } from '../data/visitors.js';
 import { sfx } from '../audio/sfx.js';
-import { drawSideLandmark, drawFixture } from './locales.js';
 
 export const SEASON_SEC = 24 * 60; // each season lasts two in-game days (24 real minutes)
 export const SEASONS = [
@@ -45,14 +44,10 @@ export class Ambient {
     this.flies = Array.from({ length: 4 }, (_, k) => ({ x: 40 + k * 90, y: 30, p: Math.random() * 6, col: ['#ffd24a', '#9ec5f0', '#f7a8c4', '#ffffff'][k] }));
   }
 
-  get wet() { return !this.underground && (this.weather.kind === 'rain' || this.weather.kind === 'snow') && this.weather.intensity > 0.5; }
-  get sty() { return this.w.game.loc().style; }
-  get underground() { return this.sty.sky === 'cave'; }
-  get locId() { return this.w.game.loc().id; }
+  get wet() { return (this.weather.kind === 'rain' || this.weather.kind === 'snow') && this.weather.intensity > 0.5; }
 
   update(dt, tod, season) {
     this.t += dt;
-    this.tod = tod;
     const wx = this.weather;
     wx.left -= dt;
     if (wx.left <= 0) {
@@ -65,14 +60,13 @@ export class Ambient {
       }
     }
     if (season.key === 'winter' && wx.kind === 'rain') wx.kind = 'snow';
-    if (this.underground && wx.kind !== 'clear') { wx.kind = 'clear'; wx.left = Math.min(wx.left, 60); }
     const target = wx.kind === 'rain' || wx.kind === 'snow' ? 1 : wx.kind === 'cloudy' ? 0.4 : 0;
     wx.intensity += (target - wx.intensity) * Math.min(1, dt * 0.5);
     if (wx.rainbow > 0) wx.rainbow = Math.max(0, wx.rainbow - dt / 45);
 
     // birds by day, shooting stars by night
     this.nextBirds -= dt;
-    if (this.nextBirds <= 0 && (tod.dark < 0.3 || this.underground) && wx.kind !== 'rain') {
+    if (this.nextBirds <= 0 && tod.dark < 0.3 && wx.kind !== 'rain') {
       this.nextBirds = rand(18, 40);
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.birds.push({ x: dir > 0 ? -60 : this.w.Wpx + 60, y: rand(0.12, 0.4) * this.w.Hpx, vx: dir * rand(28, 45), n: 3 + Math.floor(Math.random() * 5), dir });
@@ -80,7 +74,7 @@ export class Ambient {
     }
     this.birds = this.birds.filter((b) => { b.x += b.vx * dt; return b.x > -120 && b.x < this.w.Wpx + 120; });
     this.nextStar -= dt;
-    if (this.nextStar <= 0 && tod.dark > 0.45 && wx.intensity < 0.3 && !this.underground) {
+    if (this.nextStar <= 0 && tod.dark > 0.45 && wx.intensity < 0.3) {
       this.nextStar = rand(14, 30);
       this.stars.push({ x: rand(0.2, 0.9) * this.w.Wpx, y: rand(0.08, 0.3) * this.w.Hpx, life: 1.3, max: 1.3, caught: false });
     }
@@ -88,7 +82,7 @@ export class Ambient {
 
     // hot-air balloon (tap for a gift)
     this.nextBalloon -= dt;
-    if (!this.balloon && this.nextBalloon <= 0 && tod.dark < 0.4 && this.w.game.s.questIdx >= 6 && !this.underground) {
+    if (!this.balloon && this.nextBalloon <= 0 && tod.dark < 0.4 && this.w.game.s.questIdx >= 6) {
       this.nextBalloon = rand(170, 280);
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.balloon = { x: dir > 0 ? -60 : this.w.Wpx + 60, y: rand(190, 320), vx: dir * rand(14, 20), t: 0, caught: false, cols: pick([['#f28b82', '#ffd24a'], ['#9ec5f0', '#ffffff'], ['#a3d9a5', '#f7c9d6'], ['#d4b3f0', '#ffd24a']]) };
@@ -120,7 +114,7 @@ export class Ambient {
       return true;
     });
     this.nextCyclist -= dt;
-    if (!this.cyclist && this.nextCyclist <= 0 && ['meadow', 'clockwork', 'castle'].includes(this.locId)) { this.nextCyclist = rand(45, 90); const dir = Math.random() < 0.5 ? 1 : -1; this.cyclist = { x: dir > 0 ? -60 : W + 60, dir, t: 0 }; }
+    if (!this.cyclist && this.nextCyclist <= 0) { this.nextCyclist = rand(45, 90); const dir = Math.random() < 0.5 ? 1 : -1; this.cyclist = { x: dir > 0 ? -60 : W + 60, dir, t: 0 }; }
     if (this.cyclist) { const c = this.cyclist; c.t += dt; c.x += c.dir * 55 * dt; if (Math.abs(c.x - W / 2) < 2 && this.w.isGardenVisible()) sfx.bell(); if (c.x < -80 || c.x > W + 80) this.cyclist = null; }
     this.snail.x += this.snail.dir * 1.3 * dt; if (this.snail.x > 190 || this.snail.x < 40) this.snail.dir *= -1;
     for (const f of this.frogs) {
@@ -158,7 +152,6 @@ export class Ambient {
 
   drawBirds(ctx) {
     ctx.strokeStyle = 'rgba(58,52,64,0.7)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
-    if (this.underground) { for (const b of this.birds) for (let k = 0; k < b.n; k++) drawBat(ctx, b.x - b.dir * k * 18, b.y + Math.sin(this.t * 3 + k) * 8 + (k % 2) * 10, this.t * 12 + k, 0.8); return; }
     for (const b of this.birds) {
       for (let k = 0; k < b.n; k++) {
         const bx = b.x - b.dir * Math.abs(k - (b.n >> 1)) * 16 - b.dir * k * 2; const by = b.y + Math.abs(k - (b.n >> 1)) * 9;
@@ -179,13 +172,6 @@ export class Ambient {
   /* ---------------- world-space: behind the building ---------------- */
   drawBack(ctx, v, tod, season) {
     const tint = (hex) => mixDark(hex, tod.dark);
-    const kind = this.sty.trees;
-    if (kind === 'none') return;
-    if (kind !== 'oak') {
-      drawSideLandmark(ctx, kind === 'none' ? 'city' : kind, BX0 - 10, 1.15, season, tint, this.t, 11, -1);
-      drawSideLandmark(ctx, kind === 'none' ? 'city' : kind, BX1 + 12, 0.95, season, tint, this.t, 23, 1);
-      return;
-    }
     // two big old trees hugging the library
     this.drawTree(ctx, BX0 - 10, 0, 1.15, season, tint, 11);
     this.drawTree(ctx, BX1 + 12, 0, 0.95, season, tint, 23);
@@ -219,15 +205,11 @@ export class Ambient {
     const t = this.t;
     const winter = season.key === 'winter';
     const tint = (hex) => mixDark(hex, tod.dark * 0.9);
-    const loc = this.locId;
-    const grassy = loc === 'meadow' || loc === 'castle' || loc === 'sky';
-    const pondLife = loc === 'meadow';
-    if (!grassy) { this.drawWalkers(ctx, t); return; }
     // seasonal props
-    if (!pondLife) { /* the courtyard and the island have their own props */ } else if (season.key === 'spring') for (let k = 0; k < 7; k++) { const x = 296 + k * 7; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 84); ctx.lineTo(x, 74); ctx.stroke(); ell(ctx, x, 72, 2.6, 3.6, tint(['#f28b82', '#ffd24a', '#f7a8c4', '#c8a8f0'][k % 4])); }
-    if (pondLife && season.key === 'summer') for (let k = 0; k < 3; k++) { const x = 300 + k * 14; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, 86); ctx.lineTo(x + Math.sin(t + k) * 1.5, 58); ctx.stroke(); for (let p = 0; p < 10; p++) { const a = (p / 10) * Math.PI * 2; ell(ctx, x + Math.cos(a) * 5 + Math.sin(t + k) * 1.5, 56 + Math.sin(a) * 5, 2.6, 1.3, tint('#ffd24a'), a); } circ(ctx, x + Math.sin(t + k) * 1.5, 56, 3.4, tint('#7a4b2e')); }
-    if (pondLife && season.key === 'autumn') [[304, 80, 7], [320, 84, 5], [290, 86, 4]].forEach(([x, y, r]) => { ell(ctx, x, y, r * 1.3, r, tint('#e8913a')); ctx.strokeStyle = tint('#c9731f'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.ellipse(x, y, r * 0.5, r, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = tint('#5b7f4d'); ctx.fillRect(x - 0.8, y - r - 3, 1.6, 3); });
-    if (pondLife && winter) {
+    if (season.key === 'spring') for (let k = 0; k < 7; k++) { const x = 296 + k * 7; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 84); ctx.lineTo(x, 74); ctx.stroke(); ell(ctx, x, 72, 2.6, 3.6, tint(['#f28b82', '#ffd24a', '#f7a8c4', '#c8a8f0'][k % 4])); }
+    if (season.key === 'summer') for (let k = 0; k < 3; k++) { const x = 300 + k * 14; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, 86); ctx.lineTo(x + Math.sin(t + k) * 1.5, 58); ctx.stroke(); for (let p = 0; p < 10; p++) { const a = (p / 10) * Math.PI * 2; ell(ctx, x + Math.cos(a) * 5 + Math.sin(t + k) * 1.5, 56 + Math.sin(a) * 5, 2.6, 1.3, tint('#ffd24a'), a); } circ(ctx, x + Math.sin(t + k) * 1.5, 56, 3.4, tint('#7a4b2e')); }
+    if (season.key === 'autumn') [[304, 80, 7], [320, 84, 5], [290, 86, 4]].forEach(([x, y, r]) => { ell(ctx, x, y, r * 1.3, r, tint('#e8913a')); ctx.strokeStyle = tint('#c9731f'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.ellipse(x, y, r * 0.5, r, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = tint('#5b7f4d'); ctx.fillRect(x - 0.8, y - r - 3, 1.6, 3); });
+    if (winter) {
       circ(ctx, 308, 76, 10, '#fbfdff'); circ(ctx, 308, 60, 7.5, '#fbfdff'); circ(ctx, 308, 49, 5.5, '#fbfdff');
       circ(ctx, 306, 48, 0.9, '#1d1b24'); circ(ctx, 310.5, 48, 0.9, '#1d1b24');
       ctx.fillStyle = '#f28c28'; ctx.beginPath(); ctx.moveTo(308, 50); ctx.lineTo(314, 51); ctx.lineTo(308, 52); ctx.fill();
@@ -243,7 +225,7 @@ export class Ambient {
       });
     }
     // frozen pond skater or ducks & frogs
-    if (!pondLife && !(winter && loc === 'castle')) { /* no pond critters here */ } else if (winter) {
+    if (winter) {
       const k = this.t * 0.6;
       const sx = 96 + Math.sin(k) * 45; const sy = 50 + Math.sin(k * 2) * 6;
       drawMouse(ctx, sx, sy, { fur: '#c9b29b', belly: '#f4e9dc', dir: Math.cos(k) > 0 ? 1 : -1, pose: 'wave', t: this.t, scarf: '#c0504d', hat: 'bobble', hatCol: '#4f7cac', s: 0.7 });
@@ -276,16 +258,18 @@ export class Ambient {
       }
     }
     // snail on the foundation stones
-    if (!pondLife) { this.drawWalkers(ctx, t); return; }
     const sn = this.snail;
     ctx.save(); ctx.translate(sn.x, 7); ctx.scale(sn.dir, 1);
     ell(ctx, 0, 0, 5, 1.6, tint('#b8aca1')); circ(ctx, -1, -3, 3.4, tint('#c98b52')); ctx.strokeStyle = tint('#8a5a3a'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(-1, -3, 1.6, 0, Math.PI * 1.6); ctx.stroke();
     ctx.strokeStyle = tint('#b8aca1'); ctx.beginPath(); ctx.moveTo(4, -1); ctx.lineTo(5.5, -4.5); ctx.stroke();
     ctx.restore();
-    this.drawWalkers(ctx, t);
-  }
-
-  drawCyclist(ctx, tint) {
+    // passers-by heading for the door
+    const umbrella = this.weather.kind === 'rain' && this.weather.intensity > 0.3;
+    for (const m of this.walkers) {
+      drawMouse(ctx, m.x, m.y, { ...m.look, dir: m.dir, pose: 'walk', t: m.t, s: 0.72, alpha: m.alpha, umbrella: umbrella ? CLOTH[Math.floor(m.x * 7) % CLOTH.length] : null });
+    }
+    // postmouse on a bicycle
+    if (this.cyclist) {
       const c = this.cyclist; const x = c.x; const y = 44;
       ctx.save(); ctx.translate(x, y); ctx.scale(c.dir, 1);
       ctx.strokeStyle = tint('#3a3440'); ctx.lineWidth = 1.1;
@@ -294,15 +278,7 @@ export class Ambient {
       drawMouse(ctx, -1, -7, { fur: '#a98467', belly: '#ecd9c6', pose: 'sit', t: c.t, hat: 'cap', hatCol: '#4f7cac', s: 0.7, noShadow: true });
       fillRR(ctx, 6, -6, 7, 5, 1, tint('#c98b52'));
       ctx.restore();
-  }
-
-  drawWalkers(ctx, t) {
-    // passers-by heading for the door (and the post-mouse)
-    const umbrella = this.weather.kind === 'rain' && this.weather.intensity > 0.3;
-    for (const m of this.walkers) {
-      drawMouse(ctx, m.x, m.y, { ...m.look, dir: m.dir, pose: 'walk', t: m.t, s: 0.72, alpha: m.alpha, umbrella: umbrella ? CLOTH[Math.floor(m.x * 7) % CLOTH.length] : null });
     }
-    if (this.cyclist) this.drawCyclist(ctx, (h) => mixDark(h, (this.tod?.dark || 0) * 0.9));
   }
 
   /* ---------------- world-space: on the building ---------------- */
@@ -310,7 +286,7 @@ export class Ambient {
     const t = this.t;
     const leaf = season.key === 'autumn' ? ['#d9632d', '#e8913a', '#b5523b'] : season.key === 'winter' ? ['#8a6a4c'] : season.key === 'spring' ? ['#7fc063', '#9ccf7a', '#f5b8cb'] : ['#4f8a44', '#5e9c55', '#6ea35a'];
     const ivyTop = floorTop(Math.max(0, builtCount - 1)) + 60;
-    if (this.sty.ivy) [[BX0 + 3, 11], [BX1 - 3, 29]].forEach(([x, seed]) => {
+    [[BX0 + 3, 11], [BX1 - 3, 29]].forEach(([x, seed]) => {
       const R = rng(seed);
       ctx.strokeStyle = mixDark('#5b7f4d', tod.dark); ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.moveTo(x, 0);
@@ -322,18 +298,26 @@ export class Ambient {
         ell(ctx, lx, y + (R() - 0.5) * 4, 3 + R() * 1.4, 2 + R(), mixDark(leaf[Math.floor(R() * leaf.length)], tod.dark * 0.9), R() * 3);
       }
     });
-    // a light fixture on each side of every floor
-    const fx = this.sty.fixture;
+    // lanterns at every floor
     for (let i = 0; i <= topIndex; i++) {
       const y = floorTop(i) + 50;
-      drawFixture(ctx, fx, BX0 - 7, y, 1, tod.dark, t, i);
-      drawFixture(ctx, fx, BX1 + 7, y, -1, tod.dark, t, i + 7);
+      [[BX0 - 7, 1], [BX1 + 7, -1]].forEach(([x, side]) => {
+        ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + side * 7, y - 12); ctx.lineTo(x, y - 12); ctx.lineTo(x, y - 8); ctx.stroke();
+        fillRR(ctx, x - 3.5, y - 8, 7, 10, 1.5, '#3a3440');
+        ctx.fillStyle = tod.dark > 0.3 ? '#ffe39a' : '#f3ead3'; ctx.fillRect(x - 2.3, y - 6.5, 4.6, 7);
+        if (tod.dark > 0.3) {
+          ctx.globalCompositeOperation = 'lighter';
+          const g = ctx.createRadialGradient(x, y - 3, 1, x, y - 3, 26);
+          g.addColorStop(0, `rgba(255,214,130,${0.5 * tod.dark + Math.sin(t * 7 + i) * 0.03})`); g.addColorStop(1, 'rgba(255,214,130,0)');
+          ctx.fillStyle = g; ctx.fillRect(x - 26, y - 29, 52, 52);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+      });
     }
   }
 
   /* ---------------- screen-space weather (behind rooms) ---------------- */
   drawWeather(ctx, v, season) {
-    if (this.underground) return;
     const wx = this.weather; const t = this.t;
     const Wd = v.W; const H = v.H;
     if (wx.kind === 'rain' || (wx.intensity > 0.05 && season.key !== 'winter' && this.weather.kind !== 'snow')) {
@@ -406,16 +390,6 @@ export class Ambient {
     for (const f of this.frogs) if (Math.hypot(wx - f.x, wy - (f.y - 3)) < 10) { this.jumpFrog(f, true); return 'frog'; }
     return null;
   }
-}
-
-export function drawBat(ctx, x, y, t, s = 1) {
-  const f = Math.sin(t) * 0.8;
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = '#2a2436';
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-6, -6 * f - 2, -13, -3 * f); ctx.quadraticCurveTo(-8, -1, -9, 2); ctx.quadraticCurveTo(-5, 1, 0, 3);
-  ctx.quadraticCurveTo(5, 1, 9, 2); ctx.quadraticCurveTo(8, -1, 13, -3 * f); ctx.quadraticCurveTo(6, -6 * f - 2, 0, 0); ctx.fill();
-  ell(ctx, 0, 1, 2.6, 3, '#2a2436'); ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(-1.4, -4); ctx.lineTo(-0.5, -1.5); ctx.moveTo(2, -1); ctx.lineTo(1.4, -4); ctx.lineTo(0.5, -1.5); ctx.fill();
-  circ(ctx, -0.9, 0.6, 0.45, '#ffcf5a'); circ(ctx, 0.9, 0.6, 0.45, '#ffcf5a');
-  ctx.restore();
 }
 
 function mixDark(hex, dark) {
