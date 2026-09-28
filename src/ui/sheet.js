@@ -1,6 +1,7 @@
 // Bottom sheet with the upgrades of one library floor.
 import { $, h, ICO, haptic, toast } from './dom.js';
 import { ROOMS, DECOR, BOOKS, LIMITS, RARITY } from '../data/rooms.js';
+import { SLOTS, FURNITURE, FURN } from '../data/furniture.js';
 import * as E from '../core/economy.js';
 import { fmt } from '../core/format.js';
 import { sfx } from '../audio/sfx.js';
@@ -70,6 +71,8 @@ export class RoomSheet {
         ${this.rowHtml('staff', '👓', 'Librarian')}
         <div class="section-title">Décor <small>each boosts this floor's income</small></div>
         <div class="decor-grid">${DECOR.map((d, k) => `<button class="decor" data-decor="${k}"><span class="d-ico">${d.icon}</span><span class="d-name">${k === 4 ? def.centerName : d.name}</span><span class="d-cost" data-r="dc${k}"></span></button>`).join('')}</div>
+        <div class="section-title">Furniture <small>from the 🛒 Shop · tap to swap</small></div>
+        <div class="decor-grid">${SLOTS.map((sl) => `<button class="decor furn" data-slot="${sl.key}"><span class="d-ico" data-r="fi_${sl.key}"></span><span class="d-name" data-r="fn_${sl.key}"></span><span class="d-cost">${sl.name}</span></button>`).join('')}</div>
         <div class="section-title">${def.genre} Collection <small data-r="bookbonus"></small></div>
         <div class="books-row" data-r="books"></div>
       </div></div>`);
@@ -97,7 +100,26 @@ export class RoomSheet {
       if (g.buy(this.i, `decor${k}`)) { sfx.buy(); sfx.sparkle(); haptic('medium'); this.update(true); }
       else { sfx.error(); b.animate([{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], 200); }
     }));
+    this.el.querySelectorAll('[data-slot]').forEach((b) => b.addEventListener('click', () => this.swapFurniture(b.dataset.slot, b)));
     this.renderBooks();
+    this.update(true);
+  }
+
+  // Cycle this floor's spot through: default -> each owned piece for that spot -> default.
+  swapFurniture(slot, btn) {
+    const g = this.game;
+    const owned = FURNITURE.filter((f) => f.slot === slot && g.ownsFurniture(f.id)).map((f) => f.id);
+    if (!owned.length) {
+      sfx.tap(); toast(`No ${SLOTS.find((sl) => sl.key === slot).name.toLowerCase()} pieces yet. Find some in the Shop! 🛒`);
+      this.close(); this.ui.screens.shop(slot); return;
+    }
+    const cur = g.floorFurniture(this.i)[slot] || null;
+    const list = [null, ...owned];
+    const next = list[(list.indexOf(cur) + 1) % list.length];
+    g.placeFurniture(this.i, slot, next);
+    sfx.buy(); haptic('light');
+    btn.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)' }, { transform: 'scale(1)' }], 180);
+    if (next) this.ui.world.chatter.react(this.i, 'furniture');
     this.update(true);
   }
 
@@ -115,9 +137,13 @@ export class RoomSheet {
     const books = BOOKS.filter((b) => b.room === this.i);
     this.refs.books.innerHTML = books.map((b) => {
       const n = s.album[b.id] || 0;
-      return n ? `<div class="book ${b.rarity}" style="background:${b.color}"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span></div>`
-        : '<div class="book unknown">?</div>';
+      return n ? `<div class="book ${b.rarity}" data-book="${b.id}" style="background:${b.color};cursor:pointer"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span></div>`
+        : `<div class="book unknown" data-book="${b.id}">?</div>`;
     }).join('');
+    this.refs.books.querySelectorAll('[data-book]').forEach((el) => el.addEventListener('click', () => {
+      const b = BOOKS.find((x) => x.id === el.dataset.book); sfx.tap();
+      this.ui.screens.bookDetail(b, !!s.album[b.id]);
+    }));
     const owned = books.filter((b) => s.album[b.id]).length;
     this.refs.bookbonus.textContent = `${owned}/5 · ×${E.albumMult(s, this.i).toFixed(1)} income`;
   }
@@ -207,6 +233,14 @@ export class RoomSheet {
     setRow('shelves', `${r.shelves}/${LIMITS.shelves}`, r.shelves < LIMITS.shelves ? `<b>+${fmt(this.gain('shelves', 1))}/s</b> · attracts more visitors` : 'Shelves are full of stories!', 'Add shelf', g.cost(i, 'shelves'), r.shelves >= LIMITS.shelves);
     setRow('staff', `Lv ${r.staff}/${LIMITS.staff}`, r.staff < LIMITS.staff ? `<b>+${fmt(this.gain('staff', 1))}/s</b> · faster checkout` : 'A master librarian!', 'Train', g.cost(i, 'staff'), r.staff >= LIMITS.staff);
 
+    const furn = g.floorFurniture(i);
+    SLOTS.forEach((sl) => {
+      const f = FURN[furn[sl.key]];
+      R[`fi_${sl.key}`].textContent = f ? f.icon : sl.icon;
+      R[`fi_${sl.key}`].style.opacity = f ? '1' : '0.45';
+      R[`fn_${sl.key}`].textContent = f ? f.name : 'Floor’s own';
+      this.el.querySelector(`[data-slot="${sl.key}"]`).classList.toggle('owned', !!f);
+    });
     DECOR.forEach((d, k) => {
       const el = this.el.querySelector(`[data-decor="${k}"]`);
       const owned = r.decor[k];

@@ -2,11 +2,46 @@
 // Drawn once into offscreen canvases and re-rendered only when the floor changes.
 import { L, IW, FH, WALL } from './layout.js';
 import { rr, fillRR, ell, circ, shade, rng, star, rgba } from './draw.js';
+import { FLOOR_LOOK, LIVE, drawCeiling, drawWall, drawBoard, drawRug, drawLamp, drawArt, drawDesk } from './furnish.js';
+import { paintSides, BEAM } from './buildings.js';
 
 export const SEAT_H = { armchair: 16, beanbag: 11, cafe: 15, trunk: 17, wingback: 16, bench: 15, stool: 23, throne: 16, piano: 16, royal: 16 };
 const WOOD = '#8a5a3a';
 const WOOD_DK = '#6b4128';
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
+
+/* ---------------- micro textures (subtle; baked into the cached room art) ---------------- */
+// Paper grain: tiny light and dark specks.
+function paperGrain(ctx, x0, y0, w, h, seed) {
+  const R = rng(seed + 501);
+  const n = Math.floor((w * h) / 70);
+  for (let k = 0; k < n; k++) {
+    ctx.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.06)';
+    ctx.fillRect(x0 + R() * w, y0 + R() * h, 0.7 + R() * 0.6, 0.7 + R() * 0.6);
+  }
+}
+// Wood grain: long, gently wavy streaks running along the board.
+function woodGrain(ctx, x0, y0, w, h, seed, vertical = false, alpha = 0.1) {
+  const R = rng(seed + 907);
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
+  const lines = Math.max(2, Math.floor((vertical ? w : h) / 2.6));
+  for (let k = 0; k < lines; k++) {
+    ctx.strokeStyle = R() < 0.6 ? `rgba(60,30,15,${alpha})` : `rgba(255,235,200,${alpha * 0.8})`;
+    ctx.lineWidth = 0.4 + R() * 0.4;
+    ctx.beginPath();
+    if (vertical) {
+      const x = x0 + R() * w; const amp = 0.4 + R() * 0.8; const ph = R() * 6;
+      ctx.moveTo(x, y0); for (let y = y0; y <= y0 + h; y += 6) ctx.lineTo(x + Math.sin(y * 0.05 + ph) * amp, y);
+    } else {
+      const y = y0 + R() * h; const amp = 0.3 + R() * 0.6; const ph = R() * 6;
+      ctx.moveTo(x0, y); for (let x = x0; x <= x0 + w; x += 6) ctx.lineTo(x, y + Math.sin(x * 0.04 + ph) * amp);
+    }
+    ctx.stroke();
+  }
+  // a knot or two
+  if (w * h > 900) for (let k = 0; k < 2; k++) { ctx.strokeStyle = `rgba(60,30,15,${alpha * 1.2})`; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.ellipse(x0 + R() * w, y0 + R() * h, vertical ? 0.8 : 2.2, vertical ? 2.2 : 0.8, 0, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
 
 /* ---------------- wallpaper ---------------- */
 function wallpaper(ctx, pal, w, h, seed) {
@@ -64,6 +99,7 @@ function wallpaper(ctx, pal, w, h, seed) {
       break;
     default: break;
   }
+  paperGrain(ctx, 0, 0, w, h, seed);
 }
 
 /* ---------------- shelves ---------------- */
@@ -71,6 +107,7 @@ function bookshelf(ctx, x, top, w, bot, def, seed, fill) {
   const R = rng(seed);
   const h = bot - top;
   fillRR(ctx, x, top, w, h, 2, WOOD);
+  woodGrain(ctx, x, top, 3, h, seed, true, 0.16); woodGrain(ctx, x + w - 3, top, 3, h, seed + 1, true, 0.16);
   ctx.fillStyle = WOOD_DK; ctx.fillRect(x + 3, top + 6, w - 6, h - 9);
   // crown
   fillRR(ctx, x - 2, top - 3, w + 4, 6, 2, shade(WOOD, -0.08));
@@ -247,13 +284,14 @@ function centerpiece(ctx, kind, x, base, pal) {
 }
 
 /* ---------------- desk (front layer) ---------------- */
-export function paintRoomFront(ctx, def, r) {
+export function paintRoomFront(ctx, def, r, furn = {}) {
   ctx.save();
   ctx.translate(WALL, 0);
   const d = L.desk;
   const w = d.x1 - d.x0;
   // counter
   fillRR(ctx, d.x0, d.top + 4, w, d.base - d.top - 4, 2, WOOD);
+  woodGrain(ctx, d.x0, d.top + 4, w, d.base - d.top - 4, 71, false, 0.12);
   ctx.strokeStyle = shade(WOOD, 0.12); ctx.lineWidth = 1;
   for (let k = 0; k < 3; k++) { rr(ctx, d.x0 + 5 + k * ((w - 10) / 3), d.top + 11, (w - 10) / 3 - 4, d.base - d.top - 17, 2); ctx.stroke(); }
   fillRR(ctx, d.x0 - 3, d.top, w + 6, 6, 2, WOOD_DK);
@@ -268,8 +306,9 @@ export function paintRoomFront(ctx, def, r) {
   circ(ctx, d.x0 + 12, d.top - 5.8, 1.1, '#e3b04b'); ell(ctx, d.x0 + 10.5, d.top - 3, 1, 1.6, 'rgba(255,255,255,.6)');
   // stamp + ink
   fillRR(ctx, d.x0 + 24, d.top - 3, 7, 3, 1, '#3a2a40'); ctx.fillStyle = '#7a4b2e'; ctx.fillRect(d.x0 + 26.5, d.top - 8, 2, 5); circ(ctx, d.x0 + 27.5, d.top - 8.5, 2, '#7a4b2e');
-  // stack of books or fern
-  if (r.decor[2]) {
+  // stack of books or fern (or a desk piece from the Shop)
+  if (furn.desk) { if (!LIVE.has(furn.desk)) drawDesk(ctx, furn.desk, d.x1 - 9, d.top); }
+  else if (r.decor[2]) {
     fillRR(ctx, d.x1 - 14, d.top - 9, 10, 9, 2, '#c96f4a'); ctx.fillStyle = '#a95a3a'; ctx.fillRect(d.x1 - 15, d.top - 9, 12, 2.4);
     const leaves = [[-0.9, 12], [-0.45, 14], [0, 15], [0.45, 14], [0.9, 12], [-1.3, 9], [1.3, 9]];
     leaves.forEach(([a, len]) => { ctx.save(); ctx.translate(d.x1 - 9, d.top - 9); ctx.rotate(a); ell(ctx, 0, -len / 2, 2.4, len / 2, '#5e9c55'); ctx.restore(); });
@@ -294,12 +333,10 @@ function bookPile(ctx, x, y, cols, n, R) {
   }
 }
 
-export function paintRoomBack(ctx, i, def, r, fill) {
+export function paintRoomBack(ctx, i, def, r, fill, furn = {}, scene = 'meadow', look = FLOOR_LOOK[i] || {}) {
   const pal = def.pal;
-  // outer walls (building sides)
-  const sideCol = '#7b5236';
-  ctx.fillStyle = sideCol; ctx.fillRect(0, 0, WALL, FH); ctx.fillRect(WALL + IW, 0, WALL, FH);
-  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(1, 0, 2, FH); ctx.fillRect(WALL + IW + 1, 0, 2, FH);
+  // outer walls: each branch's building has its own walls
+  paintSides(ctx, scene);
 
   ctx.save();
   ctx.translate(WALL, 0);
@@ -313,6 +350,7 @@ export function paintRoomBack(ctx, i, def, r, fill) {
   // wainscoting
   const wy = 112;
   ctx.fillStyle = shade(pal.trim, 0.05); ctx.fillRect(0, wy, IW, L.wallBottom - wy);
+  woodGrain(ctx, 0, wy, IW, L.wallBottom - wy, i * 5 + 2, false, 0.08);
   ctx.fillStyle = shade(pal.trim, 0.2); ctx.fillRect(0, wy, IW, 3);
   ctx.strokeStyle = shade(pal.trim, -0.15); ctx.lineWidth = 1;
   for (let x = 6; x < IW - 20; x += 34) { rr(ctx, x, wy + 8, 26, L.wallBottom - wy - 14, 2); ctx.stroke(); }
@@ -361,8 +399,15 @@ export function paintRoomBack(ctx, i, def, r, fill) {
   while (ctx.measureText(def.name).width > p.w - 20 && fs > 7) { fs -= 0.5; ctx.font = `600 ${fs}px ${FONT}`; }
   ctx.fillText(def.name, p.x + p.w / 2, p.y + p.h / 2 + 0.5);
 
+  // this floor's own details, or Shop furniture placed here
+  const ceil = furn.ceiling || look.ceiling;
+  if (ceil && !LIVE.has(ceil)) drawCeiling(ctx, ceil, pal);
+  if (furn.wall || look.wall) drawWall(ctx, furn.wall || look.wall, pal);
+  if (furn.board || look.board) drawBoard(ctx, furn.board || look.board, pal);
+
   // painting
-  if (r.decor[3]) {
+  if (furn.art) drawArt(ctx, furn.art);
+  else if (r.decor[3]) {
     const a = L.art;
     fillRR(ctx, a.x - 3, a.y - 3, a.w + 6, a.h + 6, 2, '#c9a227');
     const sg = ctx.createLinearGradient(0, a.y, 0, a.y + a.h); sg.addColorStop(0, '#9ed0f0'); sg.addColorStop(1, '#fce5b8');
@@ -381,7 +426,8 @@ export function paintRoomBack(ctx, i, def, r, fill) {
   }
 
   // pendant lamps (glow is drawn live)
-  if (r.decor[1]) {
+  if (furn.lamp) { if (!LIVE.has(furn.lamp)) L.lamps.forEach((lx) => drawLamp(ctx, furn.lamp, lx, pal)); }
+  else if (r.decor[1]) {
     L.lamps.forEach((lx) => {
       ctx.strokeStyle = '#3a2a20'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, 22); ctx.stroke();
       ctx.fillStyle = pal.accent; ctx.beginPath(); ctx.moveTo(lx - 5, 22); ctx.lineTo(lx + 5, 22); ctx.lineTo(lx + 10, 33); ctx.lineTo(lx - 10, 33); ctx.closePath(); ctx.fill();
@@ -398,19 +444,27 @@ export function paintRoomBack(ctx, i, def, r, fill) {
 
   // floor
   ctx.fillStyle = pal.floor; ctx.fillRect(0, L.floorTop, IW, L.beamTop - L.floorTop);
+  const R = rng(i * 7 + 1);
+  // plank-to-plank colour variation, then the grain
+  for (let y = L.floorTop, row = 0; y < L.beamTop; y += 6, row++) {
+    let x = -R() * 30;
+    while (x < IW) { const len = 48 + R() * 20; ctx.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)'; ctx.fillRect(x, y, len, 6); x += len; }
+  }
+  woodGrain(ctx, 0, L.floorTop, IW, L.beamTop - L.floorTop, i * 3 + 9, false, 0.1);
   ctx.fillStyle = pal.floor2;
   for (let y = L.floorTop + 5; y < L.beamTop; y += 6) ctx.fillRect(0, y, IW, 1);
-  const R = rng(i * 7 + 1);
   for (let y = L.floorTop, row = 0; y < L.beamTop; y += 6, row++) for (let x = (row % 2) * 24 + R() * 10; x < IW; x += 48 + R() * 20) ctx.fillRect(x, y, 1, 6);
   const fg = ctx.createLinearGradient(0, L.floorTop, 0, L.floorTop + 8); fg.addColorStop(0, 'rgba(0,0,0,0.2)'); fg.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = fg; ctx.fillRect(0, L.floorTop, IW, 8);
   // beam / ceiling of the floor below
-  ctx.fillStyle = '#5b3a26'; ctx.fillRect(-WALL, L.beamTop, IW + WALL * 2, FH - L.beamTop);
-  ctx.fillStyle = '#704a31'; ctx.fillRect(-WALL, L.beamTop, IW + WALL * 2, 3);
+  ctx.fillStyle = BEAM[scene] || '#5b3a26'; ctx.fillRect(-WALL, L.beamTop, IW + WALL * 2, FH - L.beamTop);
+  ctx.fillStyle = BEAM[scene] && scene !== 'meadow' ? shade(BEAM[scene], 0.12) : '#704a31'; ctx.fillRect(-WALL, L.beamTop, IW + WALL * 2, 3);
+  woodGrain(ctx, -WALL, L.beamTop + 3, IW + WALL * 2, FH - L.beamTop - 3, i * 11 + 4, false, 0.1);
   ctx.fillStyle = '#4a2f1f'; for (let x = 10; x < IW; x += 44) { circ(ctx, x, L.beamTop + 10, 1.6, '#4a2f1f'); }
 
   // rug
-  if (r.decor[0]) {
+  if (furn.rug) drawRug(ctx, furn.rug, pal);
+  else if (r.decor[0]) {
     ell(ctx, 142, 163, 108, 7.5, shade(pal.accent, -0.15));
     ell(ctx, 142, 163, 102, 6, pal.accent);
     ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 0.8; ctx.setLineDash([3, 3]);

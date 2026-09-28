@@ -62,8 +62,15 @@ g.s.daily.last = '2000-01-01'; const d3 = g.dailyStatus(); if (d3.day !== 0 || d
 const off = g.offlineEarnings(10 * 3600 * 1000);
 if (!(off.amount > 0) || !off.capped) fail('offline earnings should be positive and capped');
 
-// prestige
+// prestige: floors, seats, décor and furniture move along; Book Collection levels and coins reset
 const before = g.s.quills;
-if (g.canPrestige()) { const got = g.prestige(); if (got < 1 || g.s.quills !== before + got || g.builtCount() !== 1) fail('prestige'); else console.log(`prestige ok: +${got} quills, now branch "${g.branch().name}"`); }
-else console.log('prestige not yet available after 4h of bot play (pending quills:', g.pendingQuills(), ')');
+g.s.cheese += 100; g.buyFurniture('persian', 0);
+g.s.branchStart = 0; // the bot played 4h; skip the moving-van rest
+const builtBefore = g.builtCount(); const seatsBefore = g.s.rooms[0].seats; const decorBefore = g.s.rooms[0].decor.join();
+if (g.canPrestige()) {
+  const res = g.prestige();
+  const ok = res && res.gained >= 1 && g.s.quills === before + res.gained && g.builtCount() >= builtBefore && g.s.rooms[0].seats === seatsBefore
+    && g.s.rooms[0].decor.join() === decorBefore && g.s.rooms.every((r) => r.lvl === 1) && g.s.coins === 0 && g.floorFurniture(0).rug === 'persian' && !g.canPrestige();
+  if (!ok) fail('prestige'); else console.log(`prestige ok: +${res.gained} quills, ${res.floors} floors moved to "${g.branch().name}"`);
+} else console.log('prestige not yet available after 4h of bot play (pending quills:', g.pendingQuills(), ')');
 if (!process.exitCode) console.log('SMOKE OK');

@@ -172,9 +172,73 @@ export class Ambient {
   /* ---------------- world-space: behind the building ---------------- */
   drawBack(ctx, v, tod, season) {
     const tint = (hex) => mixDark(hex, tod.dark);
-    // two big old trees hugging the library
-    this.drawTree(ctx, BX0 - 10, 0, 1.15, season, tint, 11);
-    this.drawTree(ctx, BX1 + 12, 0, 0.95, season, tint, 23);
+    // two big old trees hugging the library (each branch has its own kind)
+    const scene = this.w.game.branch().scene;
+    const tree = scene === 'cove' ? this.drawPalm : scene === 'pond' ? this.drawWillow : scene === 'castle' ? this.drawPine : scene === 'windmill' ? this.drawPoplar : this.drawTree;
+    tree.call(this, ctx, BX0 - 10, 0, 1.15, season, tint, 11);
+    tree.call(this, ctx, BX1 + 12, 0, 0.95, season, tint, 23);
+  }
+
+  drawPalm(ctx, x, y, s, season, tint, seed) {
+    const sway = Math.sin(this.t * 0.9 + seed) * 3;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.strokeStyle = tint('#8a6440'); ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-4, -90, 8 + sway, -180); ctx.stroke();
+    ctx.strokeStyle = tint('#6b4a34'); ctx.lineWidth = 1.2; for (let k = 1; k < 18; k++) { const u = k / 18; const px = -4 * 2 * u * (1 - u) + (8 + sway) * u * u; const py = -180 * u; ctx.beginPath(); ctx.moveTo(px - 4, py); ctx.lineTo(px + 4, py - 2); ctx.stroke(); }
+    const top = [8 + sway, -180];
+    const fr = season.key === 'winter' ? '#7fa06a' : '#4f9a4a';
+    for (let k = 0; k < 7; k++) {
+      const a = -Math.PI + (k / 6) * Math.PI + Math.sin(this.t + k) * 0.05;
+      ctx.strokeStyle = tint(fr); ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(...top); ctx.quadraticCurveTo(top[0] + Math.cos(a) * 30, top[1] + Math.sin(a) * 26 - 8, top[0] + Math.cos(a) * 52, top[1] + Math.sin(a) * 18 + 22); ctx.stroke();
+    }
+    [[-4, 6], [5, 8], [0, 12]].forEach(([dx, dy]) => circ(ctx, top[0] + dx, top[1] + dy, 4.5, tint('#7a5236')));
+    if (season.key === 'winter') for (let k = 0; k < 5; k++) ell(ctx, top[0] - 30 + k * 15, top[1] + 4, 6, 2, '#f7fafc');
+    ctx.restore();
+  }
+
+  drawWillow(ctx, x, y, s, season, tint, seed) {
+    const R = rng(seed); const sway = Math.sin(this.t * 0.7 + seed) * 3;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.fillStyle = tint('#6b4a34'); ctx.beginPath(); ctx.moveTo(-10, 0); ctx.quadraticCurveTo(-6, -70, -2, -130); ctx.lineTo(5, -130); ctx.quadraticCurveTo(7, -70, 11, 0); ctx.closePath(); ctx.fill();
+    const cols = season.bare ? ['#9aa37a'] : season.key === 'autumn' ? ['#d9a441', '#e8c465', '#b5943a'] : ['#7fae62', '#8fbe6c', '#6e9e55'];
+    for (let k = 0; k < 9; k++) ell(ctx, -45 + R() * 90 + sway * 0.5, -150 - R() * 50, 22 + R() * 10, 14 + R() * 6, tint(cols[k % cols.length]));
+    ctx.lineWidth = 1.3;
+    for (let k = -60; k <= 60; k += 5) {
+      ctx.strokeStyle = tint(cols[Math.abs(k) % cols.length]);
+      const len = 70 + ((k * 13) % 30) + (season.bare ? -30 : 0);
+      ctx.beginPath(); ctx.moveTo(k * 0.8, -150); ctx.quadraticCurveTo(k + sway, -110, k * 1.1 + sway * 1.5 + Math.sin(this.t + k) * 1.5, -150 + len); ctx.stroke();
+    }
+    if (season.key === 'winter') for (let k = 0; k < 6; k++) ell(ctx, -45 + R() * 90, -175 - R() * 30, 9, 3, '#f7fafc');
+    ctx.restore();
+  }
+
+  drawPine(ctx, x, y, s, season, tint, seed) {
+    const sway = Math.sin(this.t * 0.6 + seed) * 1.5;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.fillStyle = tint('#5b3f2e'); ctx.fillRect(-6, -40, 12, 40);
+    const layers = 6;
+    for (let k = 0; k < layers; k++) {
+      const yb = -30 - k * 32; const w = 58 - k * 8.5;
+      ctx.fillStyle = tint(k % 2 ? '#3f7a4f' : '#356b44');
+      ctx.beginPath(); ctx.moveTo(-w + sway * (k / layers), yb); ctx.lineTo(sway * (k / layers + 0.2), yb - 48); ctx.lineTo(w + sway * (k / layers), yb); ctx.quadraticCurveTo(sway * 0.5, yb + 8, -w + sway * (k / layers), yb); ctx.fill();
+      if (season.key === 'winter') { ctx.fillStyle = '#f7fafc'; ctx.beginPath(); ctx.moveTo(-w * 0.8, yb - 6); ctx.lineTo(sway * 0.2, yb - 44); ctx.lineTo(w * 0.8, yb - 6); ctx.quadraticCurveTo(0, yb - 14, -w * 0.8, yb - 6); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+
+  drawPoplar(ctx, x, y, s, season, tint, seed) {
+    const R = rng(seed); const sway = Math.sin(this.t * 0.8 + seed) * 2;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.fillStyle = tint('#6b4a34'); ctx.fillRect(-5, -60, 10, 60);
+    if (season.bare) {
+      ctx.strokeStyle = tint('#6b4a34'); ctx.lineWidth = 2; for (let k = 0; k < 8; k++) { const yy = -60 - k * 22; ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo((k % 2 ? 1 : -1) * (14 - k) + sway, yy - 18); ctx.stroke(); }
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -60); ctx.lineTo(sway, -240); ctx.stroke();
+    } else {
+      const cols = season.key === 'autumn' ? ['#e8c465', '#d9a441', '#f2d27a'] : season.key === 'spring' ? ['#9ccf7a', '#b6dd8a', '#8fc26a'] : ['#5d9450', '#6ea35a', '#4f8a44'];
+      ell(ctx, sway * 0.5, -150, 26, 98, tint(cols[0]));
+      for (let k = 0; k < 12; k++) ell(ctx, (R() - 0.5) * 30 + sway * (0.4 + R() * 0.4), -80 - R() * 150, 10 + R() * 6, 16 + R() * 10, tint(cols[k % cols.length]));
+    }
+    ctx.restore();
   }
 
   drawTree(ctx, x, y, s, season, tint, seed) {

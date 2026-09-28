@@ -1,7 +1,11 @@
 // The living library: camera (pan + pinch zoom), input, simulation and rendering.
 import { W, BX0, BX1, IX, FH, GROUND_H, ROOF_H, L, floorTop } from './layout.js';
 import { paintRoomBack, paintRoomFront, shelfFill } from './roomArt.js';
+import { LIVE, LAMP_GLOW, drawCeiling, drawLamp, drawDesk, drawWall } from './furnish.js';
 import { drawSky, drawClouds, drawFar, drawGround, drawRoof, drawConstruction, drawBuildSign, drawComplete, timeOfDay, DAY_CYCLE } from './scenery.js';
+import { drawBuildingRoof } from './buildings.js';
+import { drawFestRoom, drawFestRoof, drawFestGarden, FestSky } from './festive.js';
+import { FESTIVAL } from '../data/festivals.js';
 import { drawPigeon, drawMouse } from './draw.js';
 import { RoomSim } from './agents.js';
 import { Effects } from './effects.js';
@@ -9,7 +13,7 @@ import { Ambient, seasonAt } from './ambient.js';
 import { Events } from './events.js';
 import { Chatter } from './chatter.js';
 import { ROOMS } from '../data/rooms.js';
-import { CELEBS, ROYALS, AUTHORS } from '../data/visitors.js';
+import { CELEBS, ROYALS, AUTHORS, PARODY_AUTHORS } from '../data/visitors.js';
 import { fmt, fmtTime } from '../core/format.js';
 import { sfx } from '../audio/sfx.js';
 import { music } from '../audio/music.js';
@@ -49,7 +53,9 @@ export class World {
     this.lastCoinSfx = 0;
     this.seasonOverride = null;
     this.timeOverride = null;
-    this.season = seasonAt(Date.now() / 1000);
+    this.festSky = new FestSky();
+    this.frameDt = 0;
+    this.season = seasonAt(Date.now() / 1000, this.festSeason());
     this.prefillAll();
     this.resize();
     this.cam.y = this.defaultCamY();
@@ -275,6 +281,7 @@ export class World {
       if (r && r.buildEnd) { sfx.tap(); this.ui?.openConstruction(i); return; }
     }
     // Garden
+    if (game.giftDue() && Math.hypot(wx - GIFT_X, wy - (GIFT_Y - 8)) < 20) { sfx.tap(); this.ui?.screens.giftBox(); return; }
     if (this.ambient.hitGarden(wx, wy) === 'frog') { this.fx.hearts(wx, wy - 8, 1); return; }
     if (wy > 0 && wy < 70 && wx > 100 && wx < 190) { this.tapFisher(); return; }
     if (wy > 110 && wy < 210 && wx > 150 && wx < 320) { sfx.collect(false); this.fx.sparkle(wx, wy, 10, '#ffd257'); this.ui?.toast('💰 Your vault grows as you earn coins!'); }
@@ -332,7 +339,8 @@ export class World {
     sfx.special();
     this.fx.hearts(IX + v.x, floorTop(i) + v.y - 30, 5);
     this.fx.sparkle(IX + v.x, floorTop(i) + v.y - 20, 14);
-    this.chatter.shout(i, ['Wow, a celebrity!', 'Can I get an autograph?', 'Squee!!'], 2);
+    const t = v.special.type;
+    this.chatter.shout(i, t === 'royal' ? ['Long live the crown!', '*curtsies*', 'Is my fur okay?!', 'A real royal!'] : t === 'author' ? ['Will you sign my copy?', 'I’ve read everything you wrote!', 'When is the sequel out?', 'Squee!!'] : ['Wow, a celebrity!', 'Can I get an autograph?', 'Squee!!', 'I’m your biggest fan!', 'Selfie! Selfie!'], 2);
     this.ui?.onSpecialGreeted(i, v.special);
   }
 
@@ -371,6 +379,7 @@ export class World {
         if (type === 'author') this.game.addBoost({ mult: 3, sec: dur, room: i, label: v.special.name, icon: '✍️', key: `sp${i}` });
         if (type === 'royal') this.game.addBoost({ mult: 2, sec: dur, room: null, label: v.special.name, icon: '👑', key: `sp${i}` });
         if (type === 'critic') this.chatter.say(i, v, pick(['Hmm. Hmmmm.', 'Let me see…', '*scribble scribble*']), 3);
+        else if (v.special.line && this.isVisible(i)) this.chatter.say(i, v, v.special.line, 4);
         if (this.isVisible(i)) this.fx.sparkle(IX + v.x, floorTop(i) + v.y - 20, 16);
       },
       onSpecialLeave: (sim, v) => {
@@ -393,9 +402,10 @@ export class World {
     let type = 'celeb';
     if (roll < royalChance && built.length >= 2) type = 'royal';
     else if (roll < royalChance + 0.27) type = 'author';
-    const who = type === 'royal' ? pick(ROYALS) : type === 'author' ? AUTHORS[i] : pick(CELEBS);
+    const who = type === 'royal' ? pick(ROYALS) : type === 'author' ? pick([AUTHORS[i], ...(PARODY_AUTHORS[i] || [])]) : pick(CELEBS);
     const dur = type === 'author' ? 30 : type === 'royal' ? 28 : 24;
-    this.sims[i].spawnSpecial(type, who.name, who.look, dur);
+    const v = this.sims[i].spawnSpecial(type, who.name, who.look, dur);
+    v.special.line = who.line;
     sfx.special();
     this.ui?.specialArrived(i, type, who.name);
   }
@@ -416,9 +426,15 @@ export class World {
     this.fx.confetti((BX0 + BX1) / 2, -260, 90);
   }
 
+  // Seasonal festivals hold the weather to match (snow for Christmas, leaves for Halloween…).
+  festSeason() { return { christmas: 3, newyear: 3, halloween: 2, autumn: 2, summer: 1 }[this.game.festival()?.id] ?? null; }
+  // Debug helper (browser console): WWL.world.debugFestival('ramadan'), or null to turn it off.
+  debugFestival(id) { this.game.festOverride = id ? { ...FESTIVAL[id] } : undefined; this.cache.clear(); }
+
   /* ---------------- update ---------------- */
   update(dt) {
     this.t += dt;
+    this.frameDt = dt;
     this.trackPerf(dt);
     const game = this.game;
     const s = game.s;
@@ -479,8 +495,8 @@ export class World {
     const nowSec = Date.now() / 1000;
     const tod = timeOfDay(this.timeOverride != null ? this.timeOverride * DAY_CYCLE : nowSec); // override: 0..1 day phase (screenshots)
     this.tod = tod;
-    const season = seasonAt(nowSec, this.seasonOverride);
-    if (this.season && season.key !== this.season.key) { this.ui?.toast(`${season.icon} ${season.name} has come to the meadow!`, 'gold'); this.cache.clear(); }
+    const season = seasonAt(nowSec, this.seasonOverride ?? this.festSeason());
+    if (this.season && season.key !== this.season.key) { this.ui?.toast(`${season.icon} ${season.name} has come to ${game.branch().name}!`, 'gold'); this.cache.clear(); }
     this.season = season;
     this.ambient.update(dt, tod, season);
     this.weatherT -= dt;
@@ -508,7 +524,8 @@ export class World {
   roomArt(i) {
     const r = this.game.s.rooms[i];
     const fill = shelfFill(r.lvl);
-    const key = `${r.shelves}|${r.seats}|${r.decor.join('')}|${fill}|${r.lvl >= 10}${r.lvl >= 25}${r.lvl >= 50}${r.lvl >= 100}`;
+    const furn = this.game.floorFurniture(i);
+    const key = `${r.shelves}|${r.seats}|${r.decor.join('')}|${fill}|${r.lvl >= 10}${r.lvl >= 25}${r.lvl >= 50}${r.lvl >= 100}|${JSON.stringify(furn)}|${this.game.branch().id}`;
     const px = Math.min(3, Math.max(0.75, Math.round(this.scale * this.dpr * 2) / 2));
     const hit = this.cache.get(i);
     if (hit && hit.key === key && (hit.px === px || this.pinching || this.zoomAnim || this.budget <= 0)) return hit;
@@ -518,8 +535,8 @@ export class World {
       c.width = Math.ceil(w * px); c.height = Math.ceil(FH * px);
       const x = c.getContext('2d'); x.scale(px, px); return [c, x];
     };
-    const [back, bx] = make(); paintRoomBack(bx, i, ROOMS[i], r, fill);
-    const [front, fxx] = make(); paintRoomFront(fxx, ROOMS[i], r);
+    const [back, bx] = make(); paintRoomBack(bx, i, ROOMS[i], r, fill, furn, this.game.branch().scene);
+    const [front, fxx] = make(); paintRoomFront(fxx, ROOMS[i], r, furn);
     const art = { key, px, back, front };
     this.cache.set(i, art);
     return art;
@@ -540,8 +557,10 @@ export class World {
     const screen = () => ctx.setTransform(d, 0, 0, d, 0, 0);
     const world = () => ctx.setTransform(d * this.scale, 0, 0, d * this.scale, -d * this.scale * this.cam.x, -d * this.scale * this.cam.y);
 
+    const fest = game.festival();
     screen();
     drawSky(ctx, view, tod);
+    if (fest) this.festSky.draw(ctx, view, fest, tod, this.frameDt);
     this.ambient.drawSkyFx(ctx, view);
     drawClouds(ctx, view, tod, this.ambient.weather.intensity);
     this.ambient.drawBirds(ctx);
@@ -552,7 +571,9 @@ export class World {
     this.ambient.drawBack(ctx, view, tod, season);
     if (view.bottom > -20) {
       drawGround(ctx, view, tod, scene, t, s.coins, this.fisher, season);
+      if (game.giftDue()) drawGiftBox(ctx, GIFT_X, GIFT_Y, t);
       this.ambient.drawGarden(ctx, view, tod, season);
+      if (fest) drawFestGarden(ctx, fest, t, tod, (hex) => darken(hex, tod.dark));
     }
     screen();
     this.ambient.drawWeather(ctx, view, season);
@@ -572,7 +593,10 @@ export class World {
     }
     this.ambient.drawExterior(ctx, view, tod, season, top, game.builtCount());
     const roofY = floorTop(top);
-    this.chimney = drawRoof(ctx, roofY, t, tod, 'Whiskerwood Library', { winter: season.key === 'winter', fair: !!this.events.fair });
+    const roofOpts = { winter: season.key === 'winter', fair: !!this.events.fair };
+    this.roof = drawBuildingRoof(ctx, scene, roofY, t, tod, 'Whiskerwood Library', roofOpts) || { ...drawRoof(ctx, roofY, t, tod, 'Whiskerwood Library', roofOpts), peak: roofY - ROOF_H, eaves: meadowEaves(roofY) };
+    this.chimney = this.roof.chimneyX != null ? this.roof : null;
+    if (fest) drawFestRoof(ctx, fest, this.roof, t, tod);
 
     const next = game.nextFloor();
     this.signRect = null;
@@ -581,6 +605,13 @@ export class World {
       this.signRect = drawBuildSign(ctx, roofY - ROOF_H - 60, t, ROOMS[next].name, fmt(cost), s.coins >= cost);
     } else if (next < 0 && game.constructing() < 0) drawComplete(ctx, roofY - ROOF_H - 50, t);
 
+    // Speech bubbles go on top of every floor and the roof, so the floor above never hides them.
+    for (let i = 0; i <= top; i++) {
+      if (!s.rooms[i].built) continue;
+      const y0 = floorTop(i);
+      if (y0 > view.bottom || y0 + FH < view.top - 40) continue;
+      ctx.save(); ctx.translate(IX, y0); this.chatter.draw(ctx, i); ctx.restore();
+    }
     this.fx.draw(ctx, view);
 
     screen();
@@ -604,6 +635,12 @@ export class World {
     ctx.restore();
     ctx.drawImage(art.back, BX0, y0, w, FH);
     ctx.save(); ctx.translate(IX, y0);
+    const furn = this.game.floorFurniture(i);
+    if (LIVE.has(furn.ceiling)) drawCeiling(ctx, furn.ceiling, def.pal, this.t);
+    if (LIVE.has(furn.lamp)) L.lamps.forEach((lx) => drawLamp(ctx, furn.lamp, lx, def.pal, this.t));
+    if (LIVE.has(furn.wall)) drawWall(ctx, furn.wall, def.pal, this.t);
+    const fest = this.game.festival();
+    if (fest) drawFestRoom(ctx, fest, this.t, tod);
     const stamp = sim.stampT > 0;
     drawMouse(ctx, L.librarianX, 152, {
       fur: '#b8aca1', belly: '#efe6dc', dir: -1, pose: stamp ? 'wave' : 'stand', t: sim.librarianT,
@@ -613,24 +650,57 @@ export class World {
     ctx.restore();
     ctx.drawImage(art.front, BX0, y0, w, FH);
     ctx.save(); ctx.translate(IX, y0);
+    if (LIVE.has(furn.desk)) drawDesk(ctx, furn.desk, L.desk.x1 - 9, L.desk.top, this.t);
     sim.drawWalkers(ctx, this.t);
     this.events.drawOver(ctx, i);
     // lighting: evenings get cosy; lamps glow
+    const lit = r.decor[1] || !!furn.lamp;
     if (tod.dark > 0.05) {
-      ctx.fillStyle = `rgba(18,20,58,${tod.dark * (r.decor[1] ? 0.22 : 0.4)})`;
+      ctx.fillStyle = `rgba(18,20,58,${tod.dark * (lit ? 0.22 : 0.4)})`;
       ctx.fillRect(0, 0, BX1 - BX0 - 16, 172);
     }
-    if (r.decor[1]) {
+    if (lit) {
       ctx.globalCompositeOperation = 'lighter';
       const a = 0.1 + tod.dark * 0.45;
+      const [cr, cg, cb] = LAMP_GLOW[furn.lamp] || [255, 214, 140];
       for (const lx of L.lamps) {
         const g = ctx.createRadialGradient(lx, 36, 2, lx, 60, 90);
-        g.addColorStop(0, `rgba(255,214,140,${a})`); g.addColorStop(1, 'rgba(255,214,140,0)');
+        g.addColorStop(0, `rgba(${cr},${cg},${cb},${a})`); g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
         ctx.fillStyle = g; ctx.fillRect(lx - 90, 0, 180, 172);
       }
       ctx.globalCompositeOperation = 'source-over';
     }
-    this.chatter.draw(ctx, i);
     ctx.restore();
   }
+}
+
+// Points along the original cottage roof's edges (for festival lights).
+function meadowEaves(y0) {
+  const cx = (BX0 + BX1) / 2; const peak = y0 - ROOF_H; const a = [BX0 - 18, y0 + 4]; const b = [BX1 + 18, y0 + 4];
+  const pts = [];
+  for (let k = 0; k <= 16; k++) pts.push([a[0] + ((cx - a[0]) * k) / 16, a[1] + ((peak - a[1]) * k) / 16]);
+  for (let k = 1; k <= 16; k++) pts.push([cx + ((b[0] - cx) * k) / 16, peak + ((b[1] - peak) * k) / 16]);
+  return pts;
+}
+// Night tint for garden props (same as the garden's own).
+function darken(hex, dark) {
+  const n = parseInt(hex.slice(1), 16); const k = Math.min(0.75, dark * 1.05);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgb(${Math.round(r + (27 - r) * k)},${Math.round(g + (36 - g) * k)},${Math.round(b + (71 - b) * k)})`;
+}
+
+// The mystery gift box sits on the path by the door.
+const GIFT_X = 236; const GIFT_Y = 40;
+function drawGiftBox(ctx, x, y, t) {
+  const hop = Math.abs(Math.sin(t * 2.4)) * 3;
+  const g = ctx.createRadialGradient(x, y - 8, 2, x, y - 8, 28);
+  g.addColorStop(0, `rgba(255,225,120,${0.4 + 0.15 * Math.sin(t * 4)})`); g.addColorStop(1, 'rgba(255,225,120,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - 28, y - 36, 56, 56);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, y + 1, 11, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#9b6fb0'; ctx.fillRect(x - 9, y - 15 - hop, 18, 15);
+  ctx.fillStyle = '#b48acb'; ctx.fillRect(x - 10.5, y - 18 - hop, 21, 5);
+  ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - 1.6, y - 18 - hop, 3.2, 18); ctx.fillRect(x - 9, y - 9 - hop, 18, 2.6);
+  ctx.beginPath(); ctx.ellipse(x - 4, y - 20 - hop, 4, 2.4, -0.4, 0, Math.PI * 2); ctx.ellipse(x + 4, y - 20 - hop, 4, 2.4, 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '700 6.5px "Fredoka",sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 2.4; ctx.strokeStyle = '#6b4128';
+  ctx.strokeText('Gift!', x, y - 28 - hop); ctx.fillText('Gift!', x, y - 28 - hop);
 }

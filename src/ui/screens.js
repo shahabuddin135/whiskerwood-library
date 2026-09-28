@@ -3,6 +3,7 @@ import { openModal, closeModal } from './modals.js';
 import { $, h, ICO, toast, flyTo, bigText, centerOf, haptic } from './dom.js';
 import { ROOMS, BOOKS, RARITY, DECOR } from '../data/rooms.js';
 import { DAILY, WHEEL, SHOP } from '../data/quests.js';
+import { SLOTS, FURNITURE_BONUS, FURN } from '../data/furniture.js';
 import { BRANCHES, branchInfo } from '../data/branches.js';
 import * as E from '../core/economy.js';
 import { fmt, fmtTime } from '../core/format.js';
@@ -12,6 +13,7 @@ import { setSfxEnabled } from '../audio/sfx.js';
 import { Ads } from '../ads/ads.js';
 import { purchase, IAP_PRODUCTS } from '../iap.js';
 import { PRESTIGE_ROOM, STORY_HOUR_MAX, OFFLINE_RATE } from '../core/game.js';
+import { FURNITURE } from '../data/furniture.js';
 import { CONFIG } from '../config.js';
 
 const SCENE_BG = {
@@ -30,6 +32,8 @@ export function rewardsHtml(list) {
     if (r.kind === 'cheese') return `<div class="rw"><span class="ico ico-cheese"></span>${fmt(r.amount)}</div>`;
     if (r.kind === 'boost') return `<div class="rw">📖 ×2 · ${fmtTime(r.sec)}</div>`;
     if (r.kind === 'book') return `<div class="rw">📕 ${r.book.title}${r.dup ? ` <small>(dup +${r.cheese}🧀)</small>` : ''}</div>`;
+    if (r.kind === 'furniture') return `<div class="rw">${r.item.icon} ${r.item.name}</div>`;
+    if (r.kind === 'text') return `<div class="rw">${r.text}</div>`;
     return '';
   }).join('')}</div>`;
 }
@@ -162,7 +166,10 @@ export class Screens {
       body: `<div class="art">🎊📚🐭</div><div style="font-size:21px;font-weight:700">${def.name}</div>
         <div class="flavor">${def.genre} lovers are already queueing at the door!</div>
         <div class="muted">New seats, shelves, décor and 5 books to collect.</div>`,
-      buttons: [{ label: 'Visit the new floor', onClick: () => { this.ui.world.panToRoom(i); } }],
+      buttons: [
+        this.adBtn('Opening party! <small>×3 income here for 5 min</small>', 'opening_party', () => { this.game.addBoost({ mult: 3, sec: 300, room: i, label: 'Opening Party', icon: '🎉', key: `open${i}` }); this.ui.world.panToRoom(i); bigText('Party! ×3'); }),
+        { label: 'Visit the new floor', cls: 'plain', onClick: () => { this.ui.world.panToRoom(i); } },
+      ],
       onClose: () => {
         const g = this.game;
         if (Ads.canShowInterstitial(g.builtCount() - 1, g.s.removeAds)) setTimeout(() => Ads.interstitial('floor_built'), 400);
@@ -262,12 +269,81 @@ export class Screens {
     const b = r.book;
     openModal({
       title: r.dup ? 'Duplicate Book' : '📕 New Book!',
-      body: `<div class="card-reveal">${bookHtml(b)}</div><div class="muted">${ROOMS[b.room].genre} · ${RARITY[b.rarity].name}</div>
-        <div class="flavor">${r.dup ? `Traded for +${r.cheese} golden cheese.` : `+10% income on ${ROOMS[b.room].name}!`}</div>
+      body: `<div class="card-reveal">${bookHtml(b)}</div><div class="muted">by <b>${b.author}</b> · ${ROOMS[b.room].genre} · ${RARITY[b.rarity].name}</div>
+        <div class="flavor">${b.blurb}</div><div class="review-quote">${b.review}</div>
+        <div class="muted">${r.dup ? `Traded for +${r.cheese} golden cheese.` : `+10% income on ${ROOMS[b.room].name}!`}</div>
         ${r.setDone ? '<div class="big-reward" style="font-size:20px">Set complete! ×2 floor income</div>' : ''}`,
       buttons: [{ label: 'Lovely!', cls: 'plain' }],
     });
     sfx.sparkle();
+  }
+
+  // All three quick tasks done.
+  taskChest(list) {
+    const g = this.game;
+    this.celebrate(list);
+    const again = g.offerReady('chestX2', 6);
+    openModal({
+      title: '🎁 Task Chest!',
+      body: `<div class="art">🎁✨</div><div class="flavor">All three tasks done! Here's your chest:</div>${rewardsHtml(list)}`,
+      buttons: [
+        ...(again ? [this.adBtn('Double it!', 'task_chest_x2', () => { g.useOffer('chestX2', 60); const more = g.grant({ coinsSec: 180, cheese: 4 }); this.celebrate(more); })] : []),
+        { label: 'Lovely!', cls: 'plain' },
+      ],
+    });
+  }
+
+  // The mystery box on the doorstep.
+  giftBox() {
+    const g = this.game;
+    if (!g.giftDue()) return;
+    openModal({
+      title: '🎁 A Mystery Gift!', dismissable: false,
+      body: `<div class="art">📦🎀🐭</div><div class="flavor">A box with a big bow turned up on the doorstep. The tag just says <i>“For the librarian. Keep reading!”</i></div>
+        <div class="muted">Inside: lots of coins, golden cheese, and maybe a piece of furniture or a book.</div>`,
+      buttons: [
+        this.adBtn(`Open the whole box <small>${fmt(g.rewardCoins(900))} + cheese + surprise</small>`, 'gift_box', () => {
+          const got = g.openGift(true); this.celebrate(got);
+          const f = got.find((r) => r.kind === 'furniture');
+          if (f) toast(`${f.item.icon} There was a ${f.item.name} inside! Place it from 🔨 Upgrade.`, 'gold');
+        }),
+        { label: `Just peek <span class="ico ico-coin"></span> ${fmt(g.rewardCoins(45))}`, cls: 'plain', onClick: () => { this.celebrate(g.openGift(false)); } },
+      ],
+    });
+  }
+
+  // The current festival: what's on, the daily festival gift and the limited Shop specials.
+  festival() {
+    const g = this.game; const f = g.festival();
+    if (!f) return;
+    const specials = FURNITURE.filter((x) => x.festival === f.id);
+    const ready = g.festGiftReady();
+    const left = Math.max(0, (f.end - Date.now()) / 1000);
+    openModal({
+      title: `${f.icon} ${f.name}`,
+      body: `<div class="art">${f.icon}📚🐭</div>
+        <div class="flavor">The whole library is decorated and every mouse is in a festive mood!</div>
+        ${left > 0 ? `<div class="muted">On for another ${fmtTime(left)}</div>` : ''}
+        <div class="shop-sec">🎁 Today's festival gift</div>
+        ${ready ? rewardsHtml(Object.entries(f.gift).map(([k, v]) => (k === 'cheese' ? { kind: 'cheese', amount: v } : k === 'coinsSec' ? { kind: 'coins', amount: g.rewardCoins(v) } : k === 'book' ? { kind: 'text', text: '📕 + a book' } : null)).filter(Boolean)) : '<div class="muted">Collected today. Come back tomorrow!</div>'}
+        ${specials.length ? `<div class="shop-sec">🛍️ Limited specials in the Shop</div><div class="muted">${specials.map((x) => `${x.icon} ${x.name}${g.ownsFurniture(x.id) ? ' ✓' : ''}`).join(' · ')}</div>` : ''}`,
+      buttons: ready ? [
+        this.adBtn('Claim ×2', 'festival_gift', () => { const got = g.claimFestGift(2); if (got) this.celebrate(got); }),
+        { label: 'Claim', cls: 'plain', onClick: () => { const got = g.claimFestGift(1); if (got) this.celebrate(got); } },
+      ] : [{ label: 'Visit the Shop', cls: 'gold', onClick: () => setTimeout(() => this.shop(), 200) }],
+    });
+  }
+
+  bookDetail(b, owned) {
+    openModal({
+      title: owned ? `📕 ${b.title}` : '📕 Undiscovered Book',
+      body: owned
+        ? `<div class="card-reveal">${bookHtml(b)}</div><div class="muted">by <b>${b.author}</b> · ${ROOMS[b.room].genre} · ${RARITY[b.rarity].name}</div>
+          <div class="flavor">${b.blurb}</div><div class="review-quote">${b.review}</div>`
+        : `<div class="card-reveal">${bookHtml(b, 0)}</div><div class="flavor">A ${RARITY[b.rarity].name.toLowerCase()} ${ROOMS[b.room].genre.toLowerCase()} book is waiting to be found.</div>
+          <div class="muted">Books come from milestones, author signings, the wheel, parcels, daily gifts and the shop.</div>`,
+      buttons: [{ label: 'Close', cls: 'plain' }],
+    });
   }
 
   /* ---------- boosts ---------- */
@@ -378,7 +454,7 @@ export class Screens {
   album(start = 0) {
     const g = this.game; const s = g.s;
     let tab = start;
-    const body = h('<div><div class="bonus-line" data-total></div><div class="tabs" data-tabs></div><div class="album-grid" data-grid></div><div class="muted" data-note></div></div>');
+    const body = h('<div><div class="bonus-line" data-total></div><div class="tabs" data-tabs></div><div class="album-grid" data-grid></div><div class="book-detail" data-detail></div><div class="muted" data-note></div></div>');
     const render = () => {
       const owned = E.booksOwned(s);
       body.querySelector('[data-total]').innerHTML = `📚 ${owned} / ${BOOKS.length} books · each book +10% floor income · full set ×2`;
@@ -386,23 +462,57 @@ export class Screens {
         const n = BOOKS.filter((b) => b.room === k && s.album[b.id]).length;
         return `<button data-k="${k}" class="${k === tab ? 'on' : ''} ${s.rooms[k].built ? '' : 'locked'}">${n === 5 ? '⭐ ' : ''}${r.genre} ${n}/5</button>`;
       }).join('');
-      body.querySelector('[data-grid]').innerHTML = BOOKS.filter((b) => b.room === tab).map((b) => bookHtml(b, s.album[b.id] || 0)).join('');
+      body.querySelector('[data-grid]').innerHTML = BOOKS.filter((b) => b.room === tab).map((b) => `<div data-book="${b.id}" style="cursor:pointer">${bookHtml(b, s.album[b.id] || 0)}</div>`).join('');
+      body.querySelectorAll('[data-book]').forEach((el) => el.addEventListener('click', () => {
+        const b = BOOKS.find((x) => x.id === el.dataset.book); sfx.tap();
+        const owned = !!s.album[b.id];
+        const box = body.querySelector('[data-detail]');
+        box.innerHTML = owned ? `<b>${b.title}</b> <span class="muted">by ${b.author}</span><div class="flavor" style="margin:4px 0">${b.blurb}</div><div class="review-quote" style="font-size:13px">${b.review}</div>`
+          : `<b>???</b><div class="muted">A ${RARITY[b.rarity].name.toLowerCase()} book you haven't found yet.</div>`;
+        box.style.display = 'block';
+      }));
       body.querySelector('[data-note]').innerHTML = `${ROOMS[tab].name}: ×${E.albumMult(s, tab).toFixed(1)} income from books.<br>Books come from author signings, the wheel, parcels, daily gifts and the shop.`;
-      body.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); tab = +b.dataset.k; render(); }));
+      body.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); tab = +b.dataset.k; body.querySelector('[data-detail]').style.display = 'none'; render(); }));
     };
     render();
     openModal({ title: '📚 Book Album', body, wide: true });
   }
 
   /* ---------- shop ---------- */
-  shop() {
+  shop(startCat = null) {
     const g = this.game; const s = g.s;
     const body = h('<div data-shop></div>');
     let hd;
+    let cat = startCat || 'all';
     const item = (ico, title, desc, btn) => `<div class="shop-item"><div class="si-ico">${ico}</div><div class="si-body"><b>${title}</b><div>${desc}</div></div>${btn}</div>`;
+    const furnRow = (f) => {
+      const own = g.ownsFurniture(f.id);
+      const rar = `<span style="color:${RARITY[f.rarity].color};font-weight:700">${RARITY[f.rarity].name}</span>`;
+      const tag = f.festival ? ' · 🎉 limited' : f.branch ? ` · only in ${g.branch().name}` : '';
+      return item(f.icon, f.name, `${rar} · +${Math.round(FURNITURE_BONUS[f.rarity] * 100)}% income${tag}<br><i>${f.desc}</i>`,
+        own ? '<button class="btn plain" disabled>Owned ✓</button>' : `<button class="btn gold" data-f="${f.id}"><span class="ico ico-cheese"></span>${f.price}</button>`);
+    };
+    const furnitureHtml = () => {
+      const sale = g.furnitureForSale();
+      const special = sale.filter((f) => f.branch || f.festival);
+      const regular = sale.filter((f) => !f.branch && !f.festival && (cat === 'all' || f.slot === cat));
+      const owned = Object.keys(s.furniture.owned).length;
+      const deal = g.dailyDeal();
+      const dealRow = deal && !g.ownsFurniture(deal.item.id) ? item('🏷️', `Today's deal: ${deal.item.icon} ${deal.item.name}`, `<span style="color:${RARITY[deal.item.rarity].color};font-weight:700">${RARITY[deal.item.rarity].name}</span> · half price today only<br><i>${deal.item.desc}</i>`,
+        deal.unlocked ? `<button class="btn gold" data-deal><s style="opacity:.6">${deal.item.price}</s>&nbsp;<span class="ico ico-cheese"></span>${deal.price}</button>` : `<button class="btn ad" data-a="deal" ${g.offerReady('deal', 1) ? '' : 'disabled'}>½ price</button>`) : '';
+      return `<div class="shop-sec">🛋️ Furniture <small style="font-weight:500">kept forever · place it from 🔨 Upgrade</small></div>
+        ${dealRow}
+        ${special.length ? `${special.map(furnRow).join('')}` : ''}
+        <div class="tabs" data-cats style="margin-top:6px">${[['all', '✨ All'], ...SLOTS.map((sl) => [sl.key, `${sl.icon} ${sl.name}`])].map(([k, l]) => `<button data-cat="${k}" class="${cat === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        ${regular.map(furnRow).join('')}
+        <div class="muted">You own ${owned} piece${owned === 1 ? '' : 's'} of furniture.</div>`;
+    };
     const render = () => {
       const jarN = SHOP.jar[s.shop.jar + 1]; const offN = SHOP.offline[s.shop.offline + 1]; const perm = SHOP.perm[s.shop.perm];
+      const fest = g.festival();
       body.innerHTML = `
+        ${fest ? `<div class="bonus-line">${fest.icon} <b>${fest.name}!</b> Festival specials are in stock for a limited time.</div>` : ''}
+        ${fest && g.festGiftReady() ? item(fest.icon, 'Festival gift', 'Once a day while the festival lasts', '<span class="btn-stack"><button class="btn gold" data-a="fest">Claim</button><button class="btn ad" data-a="festx2">×2</button></span>') : ''}
         <div class="shop-sec">Free treats</div>
         ${item('🧀', `+${SHOP.adCheese} Golden Cheese`, `${g.adCheeseLeft()} left today`, `<button class="btn ad" data-a="adcheese" ${g.adCheeseLeft() <= 0 ? 'disabled' : ''}>Free</button>`)}
         ${item('📖', 'Story Hour ×2', g.storyHourLeft() > 0 ? `Active · ${fmtTime(g.storyHourLeft())} left` : 'Double income for 30 min', `<button class="btn ad" data-a="story" ${g.storyHourFull() ? 'disabled' : ''}>+30m</button>`)}
@@ -413,10 +523,27 @@ export class Screens {
         ${item('🌙', 'Night Shift', `Offline earnings for ${fmtTime(SHOP.offline[s.shop.offline].sec)}${offN ? ` → ${fmtTime(offN.sec)}` : ' (max)'}`, offN ? `<button class="btn gold" data-a="offline"><span class="ico ico-cheese"></span>${offN.cost}</button>` : '<button class="btn plain" disabled>MAX</button>')}
         ${item('👓', 'Golden Reading Glasses', `Permanent ×2 income (owned: ${s.shop.perm})`, perm != null ? `<button class="btn gold" data-a="perm"><span class="ico ico-cheese"></span>${perm}</button>` : '<button class="btn plain" disabled>MAX</button>')}
         ${item('🎁', 'Mystery Book Crate', 'A random book for your album', `<button class="btn gold" data-a="crate"><span class="ico ico-cheese"></span>${SHOP.crate}</button>`)}
+        ${furnitureHtml()}
         ${CONFIG.iapEnabled ? `<div class="shop-sec">Support the library</div>
         ${IAP_PRODUCTS.map((p) => item(p.icon, p.title, p.desc, `<button class="btn" data-iap="${p.id}" ${p.id === 'no_ads' && s.removeAds ? 'disabled' : ''}>${p.id === 'no_ads' && s.removeAds ? 'Owned' : p.price}</button>`)).join('')}` : ''}
         <div class="muted" style="margin-top:6px">Your golden cheese: <b>${fmt(s.cheese)}</b></div>`;
       body.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => act(b.dataset.a, +b.dataset.k, b)));
+      body.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); cat = b.dataset.cat; const y = body.closest('.modal-body')?.scrollTop; render(); if (y != null) body.closest('.modal-body').scrollTop = y; }));
+      body.querySelector('[data-deal]')?.addEventListener('click', () => {
+        const d = g.dailyDeal(); const floor = this.ui.world.focusedRoom();
+        if (!g.buyDeal()) { sfx.error(); toast('Not enough golden cheese 🧀'); return; }
+        if (!g.floorFurniture(floor)[d.item.slot]) g.placeFurniture(floor, d.item.slot, d.item.id);
+        sfx.buy(); sfx.sparkle(); toast(`${d.item.icon} ${d.item.name} is yours! A bargain!`, 'gold'); render();
+      });
+      body.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => {
+        const f = FURN[b.dataset.f]; const floor = this.ui.world.focusedRoom();
+        if (!g.buyFurniture(f.id, floor)) { sfx.error(); toast('Not enough golden cheese 🧀'); return; }
+        sfx.buy(); sfx.sparkle(); haptic('medium');
+        const placed = g.floorFurniture(floor)[f.slot] === f.id;
+        toast(placed ? `${f.icon} ${f.name} is now in ${ROOMS[floor].name}!` : `${f.icon} ${f.name} bought! Place it from 🔨 Upgrade.`, 'gold');
+        this.ui.world.chatter.react(floor, 'furniture');
+        const y = body.closest('.modal-body')?.scrollTop; render(); if (y != null) body.closest('.modal-body').scrollTop = y;
+      }));
       body.querySelectorAll('[data-iap]').forEach((b) => b.addEventListener('click', async () => { sfx.tap(); const ok = await purchase(b.dataset.iap, g); if (ok) { sfx.reward(); render(); } }));
     };
     const act = async (a, k, btn) => {
@@ -427,6 +554,11 @@ export class Screens {
         render(); return;
       }
       if (a === 'story') { btn.disabled = true; if (await Ads.rewarded('story_hour')) { s.stats.adsWatched++; g.addStoryHour(); bigText('Story Hour ×2!'); } render(); return; }
+      if (a === 'deal') { btn.disabled = true; if (await Ads.rewarded('shop_deal')) { s.stats.adsWatched++; g.useOffer('deal'); g.unlockDeal(); toast('🏷️ Half price unlocked for today!', 'gold'); } render(); return; }
+      if (a === 'fest' || a === 'festx2') {
+        if (a === 'festx2') { btn.disabled = true; if (!(await Ads.rewarded('festival_gift'))) { render(); return; } s.stats.adsWatched++; }
+        const got = g.claimFestGift(a === 'festx2' ? 2 : 1); if (got) this.celebrate(got, centerOf(btn)); render(); return;
+      }
       const res = g.shopBuy(a, k);
       if (!res) { sfx.error(); toast('Not enough golden cheese 🧀'); return; }
       if (a === 'warp') this.celebrate([{ kind: 'coins', amount: res }], centerOf(btn));
@@ -444,14 +576,17 @@ export class Screens {
     const cur = g.branch(); const next = g.nextBranch();
     const pend = g.pendingQuills(); const can = g.canPrestige();
     const req = !s.rooms[PRESTIGE_ROOM].built;
+    const wait = g.moveWait();
+    const local = FURNITURE.filter((f) => f.branch === next.id).map((f) => `${f.icon} ${f.name}`).join(', ');
     openModal({
       title: '🌿 New Branch', wide: true,
       body: `<div class="branch-card" style="background:${SCENE_BG[cur.scene]}"><b>Now: ${cur.name}</b><div>${cur.blurb}</div><div>Branch bonus ×${cur.mult} · ${s.quills} Golden Quills (+${s.quills * 10}% income)</div></div>
-        <div class="art" style="font-size:34px">⬇️</div>
-        <div class="branch-card" style="background:${SCENE_BG[next.scene]}"><b>Next: ${next.name}</b><div>${next.blurb}</div><div>Branch bonus ×${next.mult}</div></div>
+        <div class="art" style="font-size:34px">🧳🚚</div>
+        <div class="branch-card" style="background:${SCENE_BG[next.scene]}"><b>Next: ${next.name}</b><div>${next.blurb}</div><div>🏠 ${next.building}</div><div>Branch bonus ×${next.mult}</div></div>
         <div class="big-reward"><span class="ico ico-quill"></span>+${pend} Golden Quills</div>
-        <div class="flavor">Open a brand-new library! Floors and coins start fresh, but you keep your golden cheese, books, reputation and shop upgrades. Each quill adds +10% income forever.</div>
-        ${req ? `<div class="muted" style="color:#b5523b">Build the ${ROOMS[PRESTIGE_ROOM].name} to unlock new branches.</div>` : pend < 1 ? '<div class="muted" style="color:#b5523b">Earn more coins in this branch to gain a quill.</div>' : ''}`,
+        <div class="flavor">The whole library moves with you! Every floor you built comes along with its seats, shelves, librarian, décor and furniture. Only the Book Collection levels and coins start fresh.</div>
+        <div class="muted">Also kept: golden cheese, books, reputation, Shop upgrades and quills (+10% income each, forever).${local ? `<br>New in the ${next.name} shop: ${local}.` : ''}</div>
+        ${req ? `<div class="muted" style="color:#b5523b">Build the ${ROOMS[PRESTIGE_ROOM].name} to unlock new branches.</div>` : pend < 1 ? '<div class="muted" style="color:#b5523b">Earn more coins in this branch to gain a quill.</div>' : wait > 0 ? `<div class="muted" style="color:#b5523b">🚚 The moving van is resting after the last move. Ready in ${fmtTime(wait)}.</div>` : ''}`,
       buttons: [{
         label: `Open ${next.name}`, cls: 'gold', disabled: !can,
         onClick: () => { this.confirmPrestige(pend, next); },
@@ -459,10 +594,28 @@ export class Screens {
     });
   }
 
+  // Shown right after moving: a warm welcome and what came along.
+  arrival(res) {
+    const g = this.game; const to = res.to;
+    const gift = 10 + 5 * Math.min(8, g.s.branch);
+    const local = FURNITURE.filter((f) => f.branch === to.id);
+    openModal({
+      title: `🧳 Welcome to ${to.name}!`,
+      body: `<div class="art">${to.art || '🏡🐭'}</div>
+        <div class="flavor">${to.building} The movers carried all <b>${res.floors} floors</b> across, chairs, shelves, rugs and paintings included.</div>
+        <div class="big-reward"><span class="ico ico-quill"></span>+${res.gained} Golden Quills</div>
+        <div class="muted">Book Collection levels start fresh, so upgrade them again for big ×2 milestones. Branch bonus now ×${to.mult}.${local.length ? `<br>The local shop sells ${local.map((f) => `${f.icon} ${f.name}`).join(' and ')}.` : ''}</div>`,
+      buttons: [
+        this.adBtn(`Housewarming party! <small>+${gift} golden cheese</small>`, 'housewarming', () => { g.addCheese(gift); this.celebrate([{ kind: 'cheese', amount: gift }]); toast('What a party! Every neighbour brought cheese. 🧀', 'gold'); }),
+        { label: 'Let’s read!', cls: 'plain', onClick: () => sfx.fanfare() },
+      ],
+    });
+  }
+
   confirmPrestige(pend, next) {
     openModal({
       title: 'Are you sure?',
-      body: `<div class="art">🧳🐭</div><div class="flavor">Pack up the books and move to <b>${next.name}</b>? You'll earn <b>${pend} Golden Quills</b>.</div>`,
+      body: `<div class="art">🧳🐭</div><div class="flavor">Pack up the whole library and move to <b>${next.name}</b>? You'll earn <b>${pend} Golden Quills</b>. Your floors, décor and furniture come along.</div>`,
       row: true,
       buttons: [
         { label: 'Not yet', cls: 'plain' },

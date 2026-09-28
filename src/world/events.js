@@ -48,7 +48,7 @@ export class Events {
     if (c) {
       c.t += dt; c.life -= dt; if (c.hit > 0) c.hit -= dt;
       if (c.leaving) { c.flee += dt / 0.6; if (c.flee >= 1) this.endCat(); }
-      else if (c.life <= 0) { c.leaving = true; c.flee = 0; c.won = false; this.w.ui?.toast('😿 The readers were too scared… tap the cat next time!'); }
+      else if (c.life <= 0) { c.leaving = true; c.flee = 0; c.won = false; this.w.ui?.catEscaped(c.i); }
     }
     // worms
     const wm = this.worms;
