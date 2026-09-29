@@ -28,7 +28,7 @@ export const FLOOR_LOOK = [
 ];
 
 /* ---------------- ceiling garlands ---------------- */
-const SPANS = [[2, 98], [258, 350]];
+const SPANS = [[2, 32], [258, 350]]; // clear of the painting in the top-left corner
 // Hang `n` items along each span of a sagging string. item(x, y, k)
 function garland(ctx, col, sag, step, item, lineW = 0.7) {
   for (const [a, b] of SPANS) {

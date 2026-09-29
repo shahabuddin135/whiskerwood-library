@@ -4,6 +4,7 @@
 // along its edge that festival lights and Book Fair bunting hang from.
 import { BX0, BX1, ROOF_H, WALL, FH } from './layout.js';
 import { rr, fillRR, ell, circ, rng, star } from './draw.js';
+import { texRect } from './textures.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 const CX = (BX0 + BX1) / 2;
@@ -214,6 +215,8 @@ export function drawBuildingRoof(ctx, scene, y0, t, tod, name, opts) {
 export const BEAM = { meadow: '#5b3a26', windmill: '#5b3a26', cove: '#4f5a66', pond: '#4e3d2a', castle: '#6d6a80' };
 export function paintSides(ctx, scene) {
   const both = (fn) => { fn(0); fn(WALL + (BX1 - BX0 - WALL * 2)); };
+  const overlay = { meadow: 'bark', windmill: 'plaster', cove: 'boards', pond: 'bark', castle: 'rock' }[scene] || 'bark';
+  const finish = () => both((x) => texRect(ctx, overlay, x, 0, WALL, FH, 0.9));
   switch (scene) {
     case 'windmill': both((x) => { ctx.fillStyle = '#efe3cf'; ctx.fillRect(x, 0, WALL, FH); ctx.fillStyle = '#7a4b2e'; ctx.fillRect(x + (x ? WALL - 2.5 : 0), 0, 2.5, FH); ctx.strokeStyle = '#7a4b2e'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, 20); ctx.lineTo(x + WALL, 90); ctx.moveTo(x + WALL, 100); ctx.lineTo(x, 170); ctx.stroke(); }); break;
     case 'cove': both((x) => { ctx.fillStyle = '#4f7fa8'; ctx.fillRect(x, 0, WALL, FH); ctx.fillStyle = '#3f6f98'; for (let y = 5; y < FH; y += 7) ctx.fillRect(x, y, WALL, 1.2); ctx.fillStyle = '#f4efe6'; ctx.fillRect(x + (x ? WALL - 1.8 : 0), 0, 1.8, FH); }); break;
@@ -222,4 +225,5 @@ export function paintSides(ctx, scene) {
     default: // meadow: warm timber with a little grain
       both((x) => { ctx.fillStyle = '#7b5236'; ctx.fillRect(x, 0, WALL, FH); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x + 1, 0, 2, FH); ctx.fillStyle = 'rgba(60,35,20,0.25)'; for (let y = 12; y < FH; y += 23) ctx.fillRect(x + 4.5, y, 1, 8); });
   }
+  finish();
 }

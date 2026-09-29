@@ -83,7 +83,45 @@ const FOOT = '#eea69e';
 const EYE = '#2b2320';
 
 // Draws a mouse with its feet at (x, y). o.dir: 1 faces right, -1 faces left.
+// Poses: stand, walk, sit, read, reach, pay, hammer, wave, happy, plus eat, carry, sing, dance,
+// knit, point, sweep and clap (o.seated sits for any of them; o.item / o.yarn / o.flag add props).
+// Far away on screen, mice are drawn with a third of the shapes (no whiskers, shading or tufts):
+// at that size nobody can see the difference, and a full library has well over a hundred mice.
+let LOD = false;
+export function setMouseLod(on) { LOD = on; }
+export const mouseLod = () => LOD;
+function drawMouseLite(ctx, x, y, o) {
+  const s = o.s ?? 1; const t = o.t ?? 0; const pose = o.pose || 'stand';
+  const fur = o.fur || '#b8aca1'; const belly = o.belly || '#efe6dc';
+  ctx.save(); ctx.translate(x, y); ctx.scale((o.dir || 1) * s, s);
+  if (o.alpha != null && o.alpha < 1) ctx.globalAlpha *= Math.max(0, o.alpha);
+  const sitting = pose === 'sit' || pose === 'read' || !!o.seated;
+  const bob = pose === 'walk' ? Math.abs(Math.sin(t * 9)) * 1.6 : pose === 'dance' ? Math.abs(Math.sin(t * 5)) * 2 : 0;
+  ctx.strokeStyle = PINK; ctx.lineWidth = 1.7; ctx.lineCap = 'round'; ctx.beginPath();
+  if (sitting) { ctx.moveTo(-6, -4); ctx.quadraticCurveTo(-16, -2, -10, 0.5); } else { ctx.moveTo(-7, -7 - bob); ctx.quadraticCurveTo(-20, -10, -15, -21); }
+  ctx.stroke();
+  if (o.cape) { ctx.fillStyle = o.cape; ctx.fillRect(-12, -20 - bob, 16, 19); }
+  const hx = sitting ? 3 : 4; const hy = (sitting ? -19 : -23) - bob;
+  if (sitting) { ell(ctx, 0, -8, 8.5, 8.5, fur); ell(ctx, 3, -7.5, 5, 6, belly); ell(ctx, 7, -2.2, 5.5, 2.6, fur); }
+  else { ell(ctx, 0, -1.1, 6.5, 1.8, FOOT); ell(ctx, 0, -10 - bob, 8.5, 10, fur); ell(ctx, 3, -9 - bob, 5, 7, belly); }
+  const by = sitting ? 0 : -bob;
+  if (o.apron) fillRR(ctx, -2, -17 + by, 11, 14, 3, o.apron);
+  else if (o.vest) fillRR(ctx, -8, -17 + by, 8, 13, 3, o.vest);
+  if (o.scarf) fillRR(ctx, -5, -19.5 + by + (sitting ? 3.5 : 0), 14, 4.2, 2, o.scarf);
+  if (pose === 'read') { ctx.fillStyle = '#fbf6ea'; ctx.fillRect(6.5, -17, 8, 7); }
+  else if (pose === 'carry') fillRR(ctx, 1, -28 + by, 16, 3, 1, o.item === 'books' ? '#b5523b' : '#c9a227');
+  else if (pose === 'eat' || pose === 'knit') ell(ctx, 9, -13 + by, 3, 2.5, o.yarn || '#fbf6ea');
+  ell(ctx, hx - 3.8, hy - 8, 6.2, 6.2, fur); ell(ctx, hx - 3.5, hy - 7.7, 4.2, 4.2, PINK);
+  ell(ctx, hx, hy, 7.8, 7.6, fur); ell(ctx, hx + 6.3, hy + 1.8, 5.3, 4, fur);
+  if (o.sleep) { ctx.strokeStyle = EYE; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(hx + 2.4, hy - 1); ctx.lineTo(hx + 5.2, hy - 1); ctx.stroke(); }
+  else circ(ctx, hx + 3.8, hy - 1.2, 1.55, EYE);
+  circ(ctx, hx + 11.3, hy + 1.1, 1.55, '#e98b8b');
+  drawHat(ctx, o.crown ? 'crown' : o.hat, hx, hy, o.hatCol, t);
+  ctx.restore();
+}
+
 export function drawMouse(ctx, x, y, o) {
+  if (LOD && !o.full) { drawMouseLite(ctx, x, y, o); return; }
   const s = o.s ?? 1;
   const t = o.t ?? 0;
   const pose = o.pose || 'stand';
@@ -93,10 +131,11 @@ export function drawMouse(ctx, x, y, o) {
   ctx.translate(x, y);
   ctx.scale((o.dir || 1) * s, s);
   if (o.alpha != null && o.alpha < 1) ctx.globalAlpha *= Math.max(0, o.alpha);
+  if (pose === 'dance') ctx.rotate(Math.sin(t * 5 + (o.seed || 0)) * 0.12);
 
-  const sitting = pose === 'sit' || pose === 'read';
+  const sitting = pose === 'sit' || pose === 'read' || !!o.seated;
   const walking = pose === 'walk';
-  const bob = walking ? Math.abs(Math.sin(t * 9)) * 1.6 : Math.sin(t * 2.2) * 0.35;
+  const bob = walking ? Math.abs(Math.sin(t * 9)) * 1.6 : pose === 'dance' ? Math.abs(Math.sin(t * 5 + (o.seed || 0))) * 2.2 : Math.sin(t * 2.2) * 0.35;
   const sway = Math.sin(t * 2.6 + (o.seed || 0)) * 3;
 
   if (!o.noShadow) ell(ctx, sitting ? 2 : 0, 0.6, 10, 2.4, 'rgba(0,0,0,0.14)');
@@ -123,6 +162,8 @@ export function drawMouse(ctx, x, y, o) {
 
   if (sitting) {
     ell(ctx, 0, -8, 8.5, 8.5, fur);
+    ell(ctx, -3, -4, 5, 3.4, 'rgba(60,40,30,0.08)'); // soft shading at the back
+    ell(ctx, -2, -12, 4.2, 3, 'rgba(255,255,255,0.14)'); // and a little sheen on top
     ell(ctx, 3, -7.5, 5, 6, belly);
     ell(ctx, 7, -2.2, 5.5, 2.6, fur); // thigh
     ell(ctx, 11.5, -1.8, 3.2, 1.8, FOOT);
@@ -131,6 +172,8 @@ export function drawMouse(ctx, x, y, o) {
     ell(ctx, -3 + p * 3, -1.1, 3.4, 1.8, FOOT);
     ell(ctx, 3 - p * 3, -1.1, 3.4, 1.8, FOOT);
     ell(ctx, 0, -10 - bob, 8.5, 10, fur);
+    ell(ctx, -3.4, -5 - bob, 4.6, 4.6, 'rgba(60,40,30,0.08)');
+    ell(ctx, -2.2, -15 - bob, 4.2, 3.4, 'rgba(255,255,255,0.14)');
     ell(ctx, 3, -9 - bob, 5, 7, belly);
   }
   const by = sitting ? 0 : -bob;
@@ -171,6 +214,54 @@ export function drawMouse(ctx, x, y, o) {
     ell(ctx, 8, -9.5, 2.2, 3, fur);
   } else if (pose === 'wave') {
     ell(ctx, 7, -22 - bob + Math.sin(t * 10) * 1.5, 2.3, 4.5, fur, -0.5 + Math.sin(t * 10) * 0.3);
+  } else if (pose === 'eat') {
+    // lifting a cup or a snack to the mouth every so often
+    const up = Math.max(0, Math.sin(t * 1.8 + (o.seed || 0)));
+    const ax = 7 + up * 2; const ay = (sitting ? -9 : -12 + by) - up * 7;
+    ell(ctx, ax - 1, ay + 2, 2.3, 4, fur, -0.6 - up * 0.5);
+    const it = o.item || 'cup';
+    if (it === 'cup') { fillRR(ctx, ax + 1, ay - 5, 4.4, 4, 1, '#fbf6ea'); ctx.strokeStyle = '#fbf6ea'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(ax + 6, ay - 3, 1.2, -1.3, 1.3); ctx.stroke(); ctx.fillStyle = '#8a5a3a'; ctx.fillRect(ax + 1.5, ay - 4.6, 3.4, 0.9); }
+    else if (it === 'scone') { ell(ctx, ax + 3, ay - 3, 3, 2.4, '#e0b170'); ell(ctx, ax + 3, ay - 4.3, 2.2, 1, '#fff3dc'); circ(ctx, ax + 3.6, ay - 5, 0.8, '#e0404f'); }
+    else if (it === 'cheese') { ctx.fillStyle = '#ffcf3f'; ctx.beginPath(); ctx.moveTo(ax + 0.5, ay - 1); ctx.lineTo(ax + 7, ay - 1); ctx.lineTo(ax + 7, ay - 5.5); ctx.closePath(); ctx.fill(); circ(ctx, ax + 5, ay - 2.4, 0.7, '#e8a41f'); }
+    else if (it === 'popcorn') { fillRR(ctx, ax, ay - 5, 5, 5.4, 1, '#e0404f'); ctx.fillStyle = '#fff'; ctx.fillRect(ax + 1.6, ay - 5, 1, 5.4); for (let k = 0; k < 3; k++) circ(ctx, ax + 1 + k * 1.5, ay - 5.6, 1.2, '#fff8e0'); }
+  } else if (pose === 'carry') {
+    // a tray held up high: teacups, or a stack of books
+    ell(ctx, 6, -20 + by, 2.3, 5, fur, -0.2);
+    const it = o.item || 'cups';
+    if (it === 'books') ['#b5523b', '#3d7a5a', '#4f7cac', '#e8c465'].forEach((c, k) => fillRR(ctx, 2 + (k % 2), -28 - k * 2.8 + by, 13, 2.8, 0.6, c));
+    else {
+      fillRR(ctx, 1, -28 + by, 16, 2.2, 1, o.trayCol || '#c9a227');
+      fillRR(ctx, 3, -32 + by, 4, 4, 1, '#fbf6ea'); fillRR(ctx, 9, -32 + by, 4, 4, 1, '#fbf6ea'); ell(ctx, 15, -29.4 + by, 2, 1.3, '#e0b170');
+    }
+  } else if (pose === 'sing' || pose === 'dance') {
+    // both arms up
+    const sw = Math.sin(t * (pose === 'dance' ? 5 : 3) + (o.seed || 0));
+    ell(ctx, 7, -23 + by + sw * 1.2, 2.3, 4.6, fur, -0.6 + sw * 0.25);
+    ell(ctx, -5, -21 + by - sw * 1.2, 2.2, 4.2, shade(fur, -0.06), 0.6 - sw * 0.25);
+  } else if (pose === 'knit') {
+    // needles clicking over a growing piece of knitting
+    const k = Math.sin(t * 8 + (o.seed || 0));
+    const ky = sitting ? -1 : by;
+    ell(ctx, 7, -12 + ky, 2.3, 3.6, fur, 1.1);
+    fillRR(ctx, 9, -11 + ky, 6, 7, 1.5, o.yarn || '#e0604a');
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; for (let r = 0; r < 3; r++) ctx.fillRect(9.5, -10 + ky + r * 2.2, 5, 0.6);
+    ctx.strokeStyle = '#c9a270'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(6, -16 + ky + k); ctx.lineTo(16, -9 + ky); ctx.moveTo(8, -8 + ky - k); ctx.lineTo(16, -15 + ky); ctx.stroke();
+  } else if (pose === 'point') {
+    ell(ctx, 10, -17 + by, 5, 2.1, fur, -0.15);
+    if (o.flag) { ctx.strokeStyle = '#6b4128'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(14, -17 + by); ctx.lineTo(14, -32 + by); ctx.stroke(); ctx.fillStyle = o.flag; ctx.beginPath(); ctx.moveTo(14, -32 + by); ctx.lineTo(21 + Math.sin(t * 5), -29.5 + by); ctx.lineTo(14, -27 + by); ctx.closePath(); ctx.fill(); }
+    else if (o.baton) { ctx.strokeStyle = '#fbf6ea'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(14, -17 + by); ctx.lineTo(19, -22 + by + Math.sin(t * 7) * 3); ctx.stroke(); }
+  } else if (pose === 'sweep') {
+    const k = Math.sin(t * 5) * 0.25;
+    ctx.save(); ctx.translate(6, -13 + by); ctx.rotate(0.5 + k);
+    ctx.fillStyle = '#8a5a3a'; ctx.fillRect(-0.8, -4, 1.6, 20);
+    ctx.fillStyle = '#d9b36a'; ctx.beginPath(); ctx.moveTo(-3.5, 15); ctx.lineTo(3.5, 15); ctx.lineTo(5, 21); ctx.lineTo(-5, 21); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ell(ctx, 6, -13 + by, 2.3, 3, fur);
+  } else if (pose === 'clap') {
+    const k = Math.abs(Math.sin(t * 9 + (o.seed || 0)));
+    const cy = sitting ? -11 : -14 + by;
+    ell(ctx, 8 - k * 2, cy, 2.2, 3.2, fur, 0.4);
+    ell(ctx, 10 + k * 2, cy, 2.2, 3.2, shade(fur, -0.06), -0.4);
   } else {
     ell(ctx, 4.5, -10.5 + by, 2.3, 4.2, fur, 0.2);
     if (o.book && !sitting) fillRR(ctx, 4, -17 + by, 7, 9, 1, o.book);
@@ -180,10 +271,15 @@ export function drawMouse(ctx, x, y, o) {
   ell(ctx, hx - 1, hy - 9, 5.2, 5.2, shade(fur, -0.12));
   ell(ctx, hx - 1, hy - 9, 3.2, 3.2, shade(PINK, -0.08));
   ell(ctx, hx, hy, 7.8, 7.6, fur);
+  ell(ctx, hx - 1.5, hy - 3.4, 4, 2.6, 'rgba(255,255,255,0.16)'); // sheen on the crown
   ell(ctx, hx + 6.3, hy + 1.8, 5.3, 4, fur);
+  // a little tuft of fur
+  ctx.strokeStyle = shade(fur, -0.18); ctx.lineWidth = 0.7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(hx + 0.5, hy - 7.2); ctx.quadraticCurveTo(hx + 1.2, hy - 9.6, hx + 2.6, hy - 9.8); ctx.moveTo(hx + 2, hy - 7.4); ctx.quadraticCurveTo(hx + 3.2, hy - 9, hx + 4.4, hy - 8.8); ctx.stroke();
   ell(ctx, hx + 3.2, hy + 3.4, 1.9, 1.5, 'rgba(240,130,130,0.4)');
   ell(ctx, hx - 3.8, hy - 8, 6.2, 6.2, fur);
   ell(ctx, hx - 3.5, hy - 7.7, 4.2, 4.2, PINK);
+  ell(ctx, hx - 3.1, hy - 8.4, 2, 2, 'rgba(255,255,255,0.22)');
 
   // Eye (blinks now and then)
   const blink = o.sleep || ((t + (o.seed || 0) * 1.7) % 4.2) < 0.13;
@@ -192,6 +288,8 @@ export function drawMouse(ctx, x, y, o) {
     ctx.strokeStyle = EYE; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(hx + 3.8, hy - 0.6, 1.5, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
   } else { circ(ctx, hx + 3.8, hy - 1.2, 1.55, EYE); circ(ctx, hx + 4.3, hy - 1.8, 0.55, '#fff'); }
   circ(ctx, hx + 11.3, hy + 1.1, 1.55, '#e98b8b');
+  if (pose === 'sing') ell(ctx, hx + 8.2, hy + 4.4, 1.3, 0.8 + Math.abs(Math.sin(t * 6)) * 1.1, '#6b2a2a');
+  if (pose === 'eat' && Math.sin(t * 1.8 + (o.seed || 0)) > 0.75) ell(ctx, hx + 6.5, hy + 3.2, 2, 1.6, fur); // chewing cheeks
 
   ctx.strokeStyle = 'rgba(90,70,60,0.45)'; ctx.lineWidth = 0.5;
   ctx.beginPath();
