@@ -1,15 +1,15 @@
 // The living library: camera (pan + pinch zoom), input, simulation and rendering.
-import { W, BX0, BX1, IX, FH, GROUND_H, ROOF_H, L, floorTop } from './layout.js';
+import { W, BX0, BX1, IX, FH, GROUND_H, ROOF_H, L, floorTop, WORLD_L, WORLD_R } from './layout.js';
 import { paintRoomBack, paintRoomFront, shelfFill } from './roomArt.js';
 import { LIVE, LAMP_GLOW, drawCeiling, drawLamp, drawDesk, drawWall } from './furnish.js';
 import { drawSky, drawClouds, drawFar, drawGround, drawRoof, drawConstruction, drawBuildSign, drawComplete, timeOfDay, DAY_CYCLE } from './scenery.js';
 import { drawBuildingRoof } from './buildings.js';
 import { drawFestRoom, drawFestRoof, drawFestGarden, FestSky } from './festive.js';
 import { FESTIVAL } from '../data/festivals.js';
-import { drawPigeon, drawMouse } from './draw.js';
+import { drawPigeon, drawMouse, setMouseLod } from './draw.js';
 import { RoomSim } from './agents.js';
 import { Effects } from './effects.js';
-import { Ambient, seasonAt } from './ambient.js';
+import { Ambient, seasonFor } from './ambient.js';
 import { Events } from './events.js';
 import { Chatter } from './chatter.js';
 import { ROOMS } from '../data/rooms.js';
@@ -17,12 +17,26 @@ import { CELEBS, ROYALS, AUTHORS, PARODY_AUTHORS } from '../data/visitors.js';
 import { fmt, fmtTime } from '../core/format.js';
 import { sfx } from '../audio/sfx.js';
 import { music } from '../audio/music.js';
+import { WINGS, WING_W } from '../data/wings.js';
+import { paintWing, paintWingFront, wingArtKey, drawWingMachines, drawWingNight, drawWingOutside, drawWingBubble, drawWingProgress, drawPlot, drawWingConstruction, wingBox, wingX, wingHeight, WING_ROOF_H } from './wingArt.js';
+import { WingSim } from './wingSim.js';
+import { glow } from './glow.js';
+import { DeepView, VAULT_BOX } from './deepArt.js';
+import { STOREY_H } from '../data/wings.js';
+import { branchInfo } from '../data/branches.js';
 
 const TOP_PAD = 190; // px reserved for the HUD (quest + tasks)
 const BOTTOM_PAD = 118; // px reserved for the bottom bar
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 2.6;
 const rand = (a, b) => a + Math.random() * (b - a);
+// What the mice shout when the season turns.
+const SEASON_CHEERS = {
+  spring: ['Blossoms! Spring is here!', 'Spring cleaning my bookshelf!', 'The frogs are back!'],
+  summer: ['Summer reading time!', 'Sunflowers! Everywhere!', 'Too hot outside — lovely in here.'],
+  autumn: ['Leaves falling, pages turning!', 'Pumpkin season!', 'Scarf weather = reading weather.'],
+  winter: ['SNOW! Snow-mouse contest!', 'Hot cocoa and a thick novel.', 'Brrr! Close the mousehole!'],
+};
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
 export class World {
@@ -35,6 +49,9 @@ export class World {
     this.ambient = new Ambient(this);
     this.events = new Events(this);
     this.chatter = new Chatter(this);
+    this.deep = new DeepView(this);
+    this.wingHits = [];
+    this.wingSims = Object.fromEntries(WINGS.map((w) => [w.id, new WingSim(this, w)]));
     this.cache = new Map();
     this.cam = { x: 0, y: 0, vx: 0, vy: 0, anim: null, hold: false };
     this.zoom = 1;
@@ -43,7 +60,9 @@ export class World {
     this.t = 0;
     this.ui = null; // set by UI
     this.pigeon = null;
-    this.nextPigeon = performance.now() + rand(45, 70) * 1000;
+    this.nextPigeon = performance.now() + rand(60, 90) * 1000;
+    this.payShown = ROOMS.map(() => 0); // last time a floor showed a "+coins" pop-up
+    this.payAcc = ROOMS.map(() => 0);
     this.nextSpecial = performance.now() + rand(30, 45) * 1000;
     this.fisher = { bite: false, next: rand(6, 14) };
     this.ambientT = rand(4, 10);
@@ -55,7 +74,8 @@ export class World {
     this.timeOverride = null;
     this.festSky = new FestSky();
     this.frameDt = 0;
-    this.season = seasonAt(Date.now() / 1000, this.festSeason());
+    this.cal = game.calendar();
+    this.season = seasonFor(this.cal);
     this.prefillAll();
     this.resize();
     this.cam.y = this.defaultCamY();
@@ -65,22 +85,10 @@ export class World {
   }
 
   /* ---------------- sizing, camera & zoom ---------------- */
-  // Low-end phones: if frames are consistently slow, render at a lower resolution.
-  trackPerf(dt) {
-    if (this.lowPower) return;
-    this.perf = this.perf || { t: 0, n: 0, slow: 0 };
-    const p = this.perf; p.t += dt; p.n++;
-    if (p.t >= 2) {
-      const avg = p.t / p.n;
-      p.slow = avg > 0.034 ? p.slow + 1 : 0;
-      p.t = 0; p.n = 0;
-      if (p.slow >= 2 && (window.devicePixelRatio || 1) > 1) { this.lowPower = true; this.resize(); console.info('Whiskerwood: low-power rendering enabled'); }
-    }
-  }
-
   resize() {
     const w = window.innerWidth; const h = window.innerHeight;
-    this.dpr = this.lowPower ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    // renderCap is set by the graphics quality manager (quality.js)
+    this.dpr = Math.min(window.devicePixelRatio || 1, this.renderCap || 2);
     this.canvas.width = Math.round(w * this.dpr); this.canvas.height = Math.round(h * this.dpr);
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
     this.Wpx = w; this.Hpx = h;
@@ -88,17 +96,19 @@ export class World {
     if (w / W < base) base = w / W;
     this.baseScale = base;
     this.scale = base * this.zoom;
-    this.cache.clear();
+    this.cache.clear(); this.deep?.clear();
     this.cam.x = this.clampCamX(this.cam.x);
     this.cam.y = this.clampCam(this.cam.y);
   }
   viewW() { return this.Wpx / this.scale; }
   viewH() { return this.Hpx / this.scale; }
   defaultCamY() { return -(this.Hpx - BOTTOM_PAD - 90) / this.baseScale; }
+  // The camera can pan sideways to the wings on either side of the tower.
   clampCamX(x) {
     const vw = this.viewW();
-    if (vw >= W) return (W - vw) / 2; // whole width visible: keep centred
-    return Math.max(-30, Math.min(W + 30 - vw, x));
+    const L0 = WORLD_L; const R0 = WORLD_R;
+    if (vw >= R0 - L0) return (L0 + R0 - vw) / 2;
+    return Math.max(L0, Math.min(R0 - vw, x));
   }
   setZoom(z, ax = this.Wpx / 2, ay = this.Hpx / 2) {
     const anchor = this.toWorld(ax, ay);
@@ -121,7 +131,7 @@ export class World {
     return floorTop(top) - ROOF_H - (hasSign ? 150 : 60);
   }
   camBounds() {
-    const maxY = GROUND_H + BOTTOM_PAD / this.scale - this.viewH();
+    const maxY = this.deep.bottom() + BOTTOM_PAD / this.scale - this.viewH();
     const minY = this.contentTop() - TOP_PAD / this.scale;
     if (maxY < minY) { const mid = (minY + maxY) / 2; return [mid, mid]; } // everything fits: centre it
     return [minY, maxY];
@@ -193,13 +203,19 @@ export class World {
       }
       if (!down) return;
       const dx = e.clientX - down.x; const dy = e.clientY - down.y;
-      if (Math.abs(dy) > 8 || Math.abs(dx) > 8) down.moved = true;
+      if (!down.moved && (Math.abs(dy) > 8 || Math.abs(dx) > 8)) {
+        down.moved = true;
+        // Up in the library a drag sticks to one direction (so scrolling floors never drifts
+        // sideways); down in the Deep Stacks maze you can pan freely.
+        const underground = this.cam.y + this.viewH() / 2 > 250;
+        down.axis = underground ? 'free' : Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
+      }
       if (down.moved) {
         const [a, b] = this.camBounds();
-        let y = down.camY - dy / this.scale;
+        let y = down.camY - (down.axis === 'x' ? 0 : dy) / this.scale;
         if (y < a) y = a - (a - y) * 0.35; if (y > b) y = b + (y - b) * 0.35; // rubber band
         this.cam.y = y;
-        this.cam.x = this.clampCamX(down.camX - dx / this.scale);
+        this.cam.x = this.clampCamX(down.camX - (down.axis === 'y' ? 0 : dx) / this.scale);
       }
       down.samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
       if (down.samples.length > 6) down.samples.shift();
@@ -218,7 +234,10 @@ export class World {
       else {
         const s = down.samples; const a = s[0]; const b = s[s.length - 1];
         const vt = (b.t - a.t) / 1000;
-        if (vt > 0 && performance.now() - b.t < 80) { this.cam.vy = (-(b.y - a.y) / this.scale) / vt; this.cam.vx = (-(b.x - a.x) / this.scale) / vt; }
+        if (vt > 0 && performance.now() - b.t < 80) {
+          this.cam.vy = down.axis === 'x' ? 0 : (-(b.y - a.y) / this.scale) / vt;
+          this.cam.vx = down.axis === 'y' ? 0 : (-(b.x - a.x) / this.scale) / vt;
+        }
       }
       down = null;
     };
@@ -258,7 +277,19 @@ export class World {
 
     // Build sign
     if (this.signRect && wx > this.signRect.x0 && wx < this.signRect.x1 && wy > this.signRect.y0 && wy < this.signRect.y1) {
-      sfx.tap(); this.ui?.openBuild(game.nextFloor()); return;
+      sfx.tap();
+      if (this.signKind === 'move') this.ui?.screens.move(); else this.ui?.openBuild(game.nextFloor());
+      return;
+    }
+    // Wings: a "ready!" bubble, the building itself, or an empty plot's sign
+    for (const hb of this.wingHits) {
+      if (wx > hb.x0 && wx < hb.x1 && wy > hb.y0 && wy < hb.y1) { this.ui?.wingTap(hb.id, hb.kind); return; }
+    }
+    // The Grand Lift, then the Deep Stacks maze
+    if (game.s.deep.open && this.deep.liftAt(wx, wy)) { this.ui?.liftTap(); return; }
+    if (game.s.deep.open) {
+      const cell = this.deep.cellAt(wx, wy);
+      if (cell) { this.ui?.deepTap(cell[0], cell[1]); return; }
     }
     // Floors
     if (wx > BX0 && wx < BX1 && wy < 0) {
@@ -284,7 +315,10 @@ export class World {
     if (game.giftDue() && Math.hypot(wx - GIFT_X, wy - (GIFT_Y - 8)) < 20) { sfx.tap(); this.ui?.screens.giftBox(); return; }
     if (this.ambient.hitGarden(wx, wy) === 'frog') { this.fx.hearts(wx, wy - 8, 1); return; }
     if (wy > 0 && wy < 70 && wx > 100 && wx < 190) { this.tapFisher(); return; }
-    if (wy > 110 && wy < 210 && wx > 150 && wx < 320) { sfx.collect(false); this.fx.sparkle(wx, wy, 10, '#ffd257'); this.ui?.toast('💰 Your vault grows as you earn coins!'); }
+    if (wy > VAULT_BOX.y0 && wy < VAULT_BOX.y1 && wx > VAULT_BOX.x0 && wx < VAULT_BOX.x1) {
+      if (game.s.deep.open) { sfx.open(); this.ui?.screens.deep(); return; }
+      sfx.collect(false); this.fx.sparkle(wx, wy, 10, '#ffd257'); this.ui?.toast('💰 Your vault grows as you earn coins!');
+    }
   }
 
   petMouse(i, v, wx, wy) {
@@ -352,9 +386,13 @@ export class World {
         const x = IX + v.x; const y = floorTop(sim.i) + L.laneFront - 44;
         if (!this.isVisible(sim.i)) return;
         if (amt > 0) {
-          this.fx.text(x, y, '+' + fmt(amt), { icon: 'coin', size: 10.5 });
-          this.fx.coins(x + 6, y + 18, 2);
           const now = performance.now();
+          this.payAcc[sim.i] += amt;
+          if (now - this.payShown[sim.i] > 2200) {
+            this.fx.text(x, y, '+' + fmt(this.payAcc[sim.i]), { icon: 'coin', size: 10 });
+            this.fx.coins(x + 6, y + 18, 1);
+            this.payShown[sim.i] = now; this.payAcc[sim.i] = 0;
+          }
           if (now - this.lastCoinSfx > 140) { this.lastCoinSfx = now; sfx.coin(Math.floor(Math.random() * 5)); }
         } else if (this.game.jarFull) {
           this.fx.text(x, y, 'Jar full!', { color: '#ff9a8a', size: 9 });
@@ -426,8 +464,13 @@ export class World {
     this.fx.confetti((BX0 + BX1) / 2, -260, 90);
   }
 
-  // Seasonal festivals hold the weather to match (snow for Christmas, leaves for Halloween…).
-  festSeason() { return { christmas: 3, newyear: 3, halloween: 2, autumn: 2, summer: 1 }[this.game.festival()?.id] ?? null; }
+  // Seasons follow the Mouse Calendar; festivals decorate on top and never freeze a season.
+  // Christmas and New Year still sprinkle a little snow, whatever the season.
+  currentSeason(cal) {
+    const season = seasonFor(cal, this.seasonOverride);
+    const fest = this.game.festival()?.id;
+    return fest === 'christmas' || fest === 'newyear' ? { ...season, festiveSnow: true } : season;
+  }
   // Debug helper (browser console): WWL.world.debugFestival('ramadan'), or null to turn it off.
   debugFestival(id) { this.game.festOverride = id ? { ...FESTIVAL[id] } : undefined; this.cache.clear(); }
 
@@ -435,7 +478,6 @@ export class World {
   update(dt) {
     this.t += dt;
     this.frameDt = dt;
-    this.trackPerf(dt);
     const game = this.game;
     const s = game.s;
     const nowMs = performance.now();
@@ -467,6 +509,10 @@ export class World {
     s.rooms.forEach((r, i) => { if (r.built) this.sims[i].update(dt, game, ROOMS[i], r); });
     this.fx.update(dt);
     this.events.update(dt);
+    for (const w of WINGS) {
+      const st = game.wing(w.id);
+      if (st.built) this.wingSims[w.id].update(dt, game, st, this.wingVisible(w));
+    }
     this.chatter.update(dt);
 
     // guests & pigeons
@@ -475,8 +521,8 @@ export class World {
       if (s.questIdx >= 3 || s.stats.specials > 0) this.spawnSpecial();
     }
     if (!this.pigeon && nowMs > this.nextPigeon) {
-      this.nextPigeon = nowMs + rand(85, 150) * 1000;
-      if (s.questIdx >= 5) {
+      this.nextPigeon = nowMs + rand(120, 200) * 1000;
+      if (s.questIdx >= 5 && !this.ambient.balloon) {
         const dir = Math.random() < 0.5 ? 1 : -1;
         this.pigeon = { dir, x: dir > 0 ? -40 : this.Wpx + 40, y: TOP_PAD + rand(20, 120), vx: dir * rand(38, 52), t: 0, caught: false };
         sfx.coo();
@@ -495,9 +541,26 @@ export class World {
     const nowSec = Date.now() / 1000;
     const tod = timeOfDay(this.timeOverride != null ? this.timeOverride * DAY_CYCLE : nowSec); // override: 0..1 day phase (screenshots)
     this.tod = tod;
-    const season = seasonAt(nowSec, this.seasonOverride ?? this.festSeason());
-    if (this.season && season.key !== this.season.key) { this.ui?.toast(`${season.icon} ${season.name} has come to ${game.branch().name}!`, 'gold'); this.cache.clear(); }
-    this.season = season;
+    const cal = game.calendar();
+    const season = this.currentSeason(cal);
+    if (this.season && season.key !== this.season.key) {
+      this.ui?.toast(`${season.icon} ${season.name} has come to ${game.branch().name}!`, 'gold');
+      this.chatter.shout(this.focusedRoom(), SEASON_CHEERS[season.key], 2);
+      this.cache.clear();
+    }
+    this.season = season; this.cal = cal;
+    // Festivals arrive as the Mouse Year turns: announce them and let the mice celebrate.
+    const fest = game.festival();
+    const fid = fest?.id || null;
+    if (this.festId !== undefined && fid !== this.festId) {
+      if (fest) {
+        this.ui?.toast(`${fest.icon} ${fest.name} has begun at ${game.branch().name}!`, 'gold');
+        this.chatter.shout(this.focusedRoom(), fest.lines, 3);
+        this.fx.confetti(IX + 176, this.cam.y + this.viewH() * 0.35, 40);
+      }
+      this.cache.clear();
+    }
+    this.festId = fid;
     this.ambient.update(dt, tod, season);
     this.weatherT -= dt;
     if (this.weatherT <= 0) {
@@ -557,27 +620,55 @@ export class World {
     const screen = () => ctx.setTransform(d, 0, 0, d, 0, 0);
     const world = () => ctx.setTransform(d * this.scale, 0, 0, d * this.scale, -d * this.scale * this.cam.x, -d * this.scale * this.cam.y);
 
-    const fest = game.festival();
-    screen();
-    drawSky(ctx, view, tod);
-    if (fest) this.festSky.draw(ctx, view, fest, tod, this.frameDt);
-    this.ambient.drawSkyFx(ctx, view);
-    drawClouds(ctx, view, tod, this.ambient.weather.intensity);
-    this.ambient.drawBirds(ctx);
+    // Section timing for tuning: set WWL.world.prof = {} in the console, read it back later.
+    const prof = this.prof; let pt = prof ? performance.now() : 0;
+    const mark = (name) => { if (!prof) return; const n = performance.now(); prof[name] = (prof[name] || 0) + (n - pt); pt = n; };
+    if (prof) prof.frames = (prof.frames || 0) + 1;
 
-    world();
+    const fest = game.festival();
+    // cached pictures are painted at this many pixels per world unit (held while zooming)
+    const px = Math.min(2.5, Math.max(0.75, Math.round(this.scale * this.dpr * 2) / 2));
+    const stable = !(this.pinching || this.zoomAnim);
+    // mice far away on screen are drawn with fewer details
+    setMouseLod(this.scale * this.dpr < 1.25 || this.lite);
+    const sky = view.top < 92; // is anything above the soil on screen?
     const scene = game.branch().scene;
-    drawFar(ctx, view, tod, scene, t, season);
-    this.ambient.drawBack(ctx, view, tod, season);
-    if (view.bottom > -20) {
-      drawGround(ctx, view, tod, scene, t, s.coins, this.fisher, season);
+    screen();
+    if (sky) {
+      drawSky(ctx, view, tod);
+      if (fest) this.festSky.draw(ctx, view, fest, tod, this.frameDt);
+      this.ambient.drawSkyFx(ctx, view);
+      drawClouds(ctx, view, tod, this.ambient.weather.intensity);
+      this.ambient.drawBirds(ctx);
+      mark('sky');
+      world();
+      drawFar(ctx, view, tod, scene, t, season);
+      mark('far');
+      this.ambient.drawBack(ctx, view, tod, season);
+      mark('trees');
+    }
+    world();
+    if (view.bottom > -20 && sky) {
+      drawGround(ctx, view, tod, scene, t, this.fisher, season, px, stable);
       if (game.giftDue()) drawGiftBox(ctx, GIFT_X, GIFT_Y, t);
       this.ambient.drawGarden(ctx, view, tod, season);
       if (fest) drawFestGarden(ctx, fest, t, tod, (hex) => darken(hex, tod.dark));
     }
-    screen();
-    this.ambient.drawWeather(ctx, view, season);
+    mark('ground');
+    if (view.bottom > 4) this.deep.draw(ctx, view, t, s.coins, px, stable, (hex) => darken(hex, tod.dark), tod.dark);
+    mark('deep');
+    if (sky) {
+      // rain and snow fall over the sky and the garden, never through the soil
+      screen();
+      const groundY = (92 - this.cam.y) * this.scale;
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.Wpx, Math.min(this.Hpx, groundY)); ctx.clip();
+      this.ambient.drawWeather(ctx, view, season);
+      ctx.restore();
+    }
+    mark('weather');
     world();
+    this.drawWings(ctx, view, tod, season);
+    mark('wings');
 
     const top = this.topFloorIndex();
     for (let i = 0; i <= top; i++) {
@@ -591,20 +682,35 @@ export class World {
         drawConstruction(ctx, i, t, Math.min(1, 1 - (rem * 1000) / Math.max(1, total)), fmtTime(rem));
       }
     }
+    mark('floors');
     this.ambient.drawExterior(ctx, view, tod, season, top, game.builtCount());
+    mark('exterior');
     const roofY = floorTop(top);
     const roofOpts = { winter: season.key === 'winter', fair: !!this.events.fair };
-    this.roof = drawBuildingRoof(ctx, scene, roofY, t, tod, 'Whiskerwood Library', roofOpts) || { ...drawRoof(ctx, roofY, t, tod, 'Whiskerwood Library', roofOpts), peak: roofY - ROOF_H, eaves: meadowEaves(roofY) };
-    this.chimney = this.roof.chimneyX != null ? this.roof : null;
-    if (fest) drawFestRoof(ctx, fest, this.roof, t, tod);
+    const roofVisible = view.bottom > roofY - ROOF_H - 220 && view.top < roofY + 10;
+    if (roofVisible) {
+      this.roof = drawBuildingRoof(ctx, scene, roofY, t, tod, 'Whiskerwood Library', roofOpts) || { ...drawRoof(ctx, roofY, t, tod, 'Whiskerwood Library', roofOpts), peak: roofY - ROOF_H, eaves: meadowEaves(roofY) };
+      this.chimney = this.roof.chimneyX != null ? this.roof : null;
+      if (fest) drawFestRoof(ctx, fest, this.roof, t, tod);
+    } else this.chimney = null;
 
     const next = game.nextFloor();
-    this.signRect = null;
-    if (next > 0 && game.constructing() < 0) {
+    this.signRect = null; this.signKind = null;
+    if (!roofVisible) { /* the sign sits above the roof: nothing to draw */ } else if (next > 0 && game.constructing() < 0) {
       const cost = ROOMS[next].unlock;
       this.signRect = drawBuildSign(ctx, roofY - ROOF_H - 60, t, ROOMS[next].name, fmt(cost), s.coins >= cost);
+      this.signKind = 'build';
+    } else if (game.constructing() < 0 && (game.siteFull() || s.move.end)) {
+      // this building is full: the sign points at the next, bigger site
+      const nb = game.nextBranch();
+      const waiting = !!s.move.end && !game.moveReady();
+      this.signRect = drawBuildSign(ctx, roofY - ROOF_H - 60, t, `Move to ${nb.name}`,
+        s.move.end ? (waiting ? `⏳ ${fmtTime(game.moveRemaining())}` : '📦 Ready to move in!') : fmt(nb.cost),
+        game.canBuyLand() || game.moveReady(), s.move.end ? '🚚 THE MOVERS ARE BUSY' : '🚚 THIS SITE IS FULL', !s.move.end);
+      this.signKind = 'move';
     } else if (next < 0 && game.constructing() < 0) drawComplete(ctx, roofY - ROOF_H - 50, t);
 
+    mark('roof');
     // Speech bubbles go on top of every floor and the roof, so the floor above never hides them.
     for (let i = 0; i <= top; i++) {
       if (!s.rooms[i].built) continue;
@@ -612,7 +718,9 @@ export class World {
       if (y0 > view.bottom || y0 + FH < view.top - 40) continue;
       ctx.save(); ctx.translate(IX, y0); this.chatter.draw(ctx, i); ctx.restore();
     }
+    mark('chatter');
     this.fx.draw(ctx, view);
+    mark('fx');
 
     screen();
     if (this.pigeon) {
@@ -622,6 +730,75 @@ export class World {
       ctx.restore();
     }
     this.ambient.drawFront(ctx);
+    mark('front');
+  }
+
+  /* ---------------- wings ---------------- */
+  wingArt(w, st, season) {
+    const g = this.game;
+    const found = w.id === 'museum' ? Object.keys(g.s.deep.fossils).sort() : [];
+    const key = wingArtKey(w, st, found.join(','), season.key === 'winter');
+    const px = Math.min(3, Math.max(0.75, Math.round(this.scale * this.dpr * 2) / 2));
+    const id = 'wing:' + w.id;
+    const hit = this.cache.get(id);
+    if (hit && hit.key === key && (hit.px === px || this.pinching || this.zoomAnim || this.budget <= 0)) return hit;
+    this.budget--;
+    const H = wingHeight(st) + WING_ROOF_H + 64; const Wd = WING_W + 40;
+    const make = () => { const c = document.createElement('canvas'); c.width = Math.ceil(Wd * px); c.height = Math.ceil((H + 12) * px); const x = c.getContext('2d'); x.scale(px, px); x.translate(20, H); return [c, x]; };
+    const [c, x] = make(); paintWing(x, w, st, { found, winter: season.key === 'winter' });
+    let front = null;
+    if (w.id === 'cafe') { const [fc, fx] = make(); paintWingFront(fx, w, st); front = fc; }
+    const art = { key, px, img: c, front, w: Wd, h: H + 12, top: H };
+    this.cache.set(id, art);
+    return art;
+  }
+
+  drawWings(ctx, view, tod, season) {
+    const g = this.game; const s = g.s; const t = this.t;
+    this.wingHits = [];
+    for (const w of WINGS) {
+      const st = g.wing(w.id);
+      const x0 = wingX(w);
+      if (x0 + WING_W + 4 < view.worldLeft || x0 - 4 > view.worldRight) continue;
+      if (view.top > 20 || view.bottom < -(STOREY_H * 2 + WING_ROOF_H + 80)) continue;
+      if (st.built) {
+        const art = this.wingArt(w, st, season);
+        const sim = this.wingSims[w.id];
+        const state = g.wingActionState(w.id);
+        ctx.drawImage(art.img, x0 - 20, -art.top, art.w, art.h);
+        drawWingMachines(ctx, w, st, t, state === 'running');
+        sim.drawBack(ctx, st, t);
+        if (art.front) ctx.drawImage(art.front, x0 - 20, -art.top, art.w, art.h);
+        sim.draw(ctx, st, t, g);
+        drawWingNight(ctx, w, st, t, tod);
+        for (const hb of drawWingOutside(ctx, w, st, t, tod)) this.wingHits.unshift(hb);
+        if (state === 'running') {
+          const left = g.wingActionLeft(w.id); const total = w.action.run;
+          drawWingProgress(ctx, w, st, 1 - left / total, w.id === 'hall' ? `${g.todaysClub().icon} ${fmtTime(left)}` : `🖨️ Printing… ${fmtTime(left)}`);
+        }
+        if (state === 'ready' || state === 'done') {
+          const label = w.id === 'press' ? (state === 'done' ? 'Books!' : 'Print') : w.id === 'hall' ? 'Club night' : w.id === 'cafe' ? 'Scones!' : 'Tour!';
+          const hb = drawWingBubble(ctx, w, st, t, state === 'done' ? '📕' : w.id === 'hall' ? g.todaysClub().icon : w.action.icon, label);
+          this.wingHits.unshift({ ...hb, id: w.id, kind: 'bubble' });
+        }
+        this.wingHits.push({ ...wingBox(w, st), id: w.id, kind: 'wing' });
+        sim.drawTalk(ctx);
+      } else if (st.buildEnd) {
+        const rem = g.wingRemaining(w.id);
+        drawWingConstruction(ctx, w, t, Math.min(1, 1 - rem / Math.max(1, w.build)), fmtTime(rem));
+        this.wingHits.push({ ...wingBox(w, st), id: w.id, kind: 'build' });
+      } else {
+        const open = g.wingOpen(w.id);
+        const site = open ? '' : BRANCH_FOR_PLOT(w.plot, g);
+        const hb = drawPlot(ctx, w, open ? 'open' : 'locked', t, tod, { affordable: s.coins >= w.unlock, cost: fmt(w.unlock), site });
+        this.wingHits.push({ ...hb, id: w.id, kind: 'plot' });
+      }
+    }
+  }
+
+  wingVisible(w) {
+    const x0 = wingX(w);
+    return x0 + WING_W > this.cam.x && x0 < this.cam.x + this.viewW() && this.cam.y < 20 && this.cam.y + this.viewH() > -300;
   }
 
   drawRoom(ctx, i, y0, tod) {
@@ -662,16 +839,18 @@ export class World {
     if (lit) {
       ctx.globalCompositeOperation = 'lighter';
       const a = 0.1 + tod.dark * 0.45;
-      const [cr, cg, cb] = LAMP_GLOW[furn.lamp] || [255, 214, 140];
-      for (const lx of L.lamps) {
-        const g = ctx.createRadialGradient(lx, 36, 2, lx, 60, 90);
-        g.addColorStop(0, `rgba(${cr},${cg},${cb},${a})`); g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-        ctx.fillStyle = g; ctx.fillRect(lx - 90, 0, 180, 172);
-      }
+      const rgb = (LAMP_GLOW[furn.lamp] || [255, 214, 140]).join(',');
+      for (const lx of L.lamps) glow(ctx, lx, 52, 92, rgb, a, 0, 172);
       ctx.globalCompositeOperation = 'source-over';
     }
     ctx.restore();
   }
+}
+
+// The site whose land has room for this wing plot.
+function BRANCH_FOR_PLOT(plot, game) {
+  for (let i = game.s.branch + 1; i < game.s.branch + 12; i++) if (branchInfo(i).plots > plot) return branchInfo(i).name;
+  return 'a bigger site';
 }
 
 // Points along the original cottage roof's edges (for festival lights).
@@ -693,9 +872,7 @@ function darken(hex, dark) {
 const GIFT_X = 236; const GIFT_Y = 40;
 function drawGiftBox(ctx, x, y, t) {
   const hop = Math.abs(Math.sin(t * 2.4)) * 3;
-  const g = ctx.createRadialGradient(x, y - 8, 2, x, y - 8, 28);
-  g.addColorStop(0, `rgba(255,225,120,${0.4 + 0.15 * Math.sin(t * 4)})`); g.addColorStop(1, 'rgba(255,225,120,0)');
-  ctx.fillStyle = g; ctx.fillRect(x - 28, y - 36, 56, 56);
+  glow(ctx, x, y - 8, 28, '255,225,120', 0.4 + 0.15 * Math.sin(t * 4));
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, y + 1, 11, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#9b6fb0'; ctx.fillRect(x - 9, y - 15 - hop, 18, 15);
   ctx.fillStyle = '#b48acb'; ctx.fillRect(x - 10.5, y - 18 - hop, 21, 5);

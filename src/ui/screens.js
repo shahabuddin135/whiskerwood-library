@@ -12,18 +12,49 @@ import { music } from '../audio/music.js';
 import { setSfxEnabled } from '../audio/sfx.js';
 import { Ads } from '../ads/ads.js';
 import { purchase, IAP_PRODUCTS } from '../iap.js';
-import { PRESTIGE_ROOM, STORY_HOUR_MAX, OFFLINE_RATE } from '../core/game.js';
+import { STORY_HOUR_MAX, OFFLINE_RATE } from '../core/game.js';
+import { placeScreens } from './places.js';
+import { WINGS } from '../data/wings.js';
 import { FURNITURE } from '../data/furniture.js';
 import { CONFIG } from '../config.js';
+import { SPEED_ORDER, SPEED_LABEL } from '../core/calendar.js';
+import { GRAPHICS, GRAPHICS_LABEL } from '../world/quality.js';
 
 const SCENE_BG = {
   meadow: 'linear-gradient(135deg,#8cc56f,#e8c465)', windmill: 'linear-gradient(135deg,#9ec5f0,#e8cf7a)',
   cove: 'linear-gradient(135deg,#4f8fd9,#8fd3c7)', pond: 'linear-gradient(135deg,#5e9c55,#79b8cf)', castle: 'linear-gradient(135deg,#4b3f78,#b27fa0)',
 };
 
+// Book covers: each book gets its own cloth pattern and title style (picked from its id, so it
+// never changes), a gold emblem for its genre, and tooling that gets fancier with rarity.
+const COVER_PATTERNS = ['cloth', 'stripes', 'dots', 'diamond', 'marble', 'plaid', 'scales', 'damask', 'stars', 'waves'];
+const EMBLEM = (inner) => `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+const G = 'fill="#f2d27a" stroke="#5a3a1a" stroke-width="0.8" stroke-linejoin="round"';
+const GL = 'fill="none" stroke="#f2d27a" stroke-linecap="round" stroke-linejoin="round"';
+const GENRE_EMBLEMS = [
+  EMBLEM(`<path ${G} d="M3.5 17 L4.5 7.5 L9 11 L12 5 L15 11 L19.5 7.5 L20.5 17 Z"/><rect ${G} x="3.5" y="17.6" width="17" height="2.6" rx="1"/>`), // fairy tales: crown
+  EMBLEM(`<path ${G} d="M12 2.8 L14.7 8.7 L21.1 9.4 L16.3 13.6 L17.7 20 L12 16.7 L6.3 20 L7.7 13.6 L2.9 9.4 L9.3 8.7 Z"/>`), // picture books: star
+  EMBLEM(`<path ${G} d="M4.5 9 H16.5 V13 A6 6 0 0 1 10.5 19 A6 6 0 0 1 4.5 13 Z"/><path ${GL} stroke-width="1.8" d="M16.5 10.5 H18.2 A2.4 2.4 0 0 1 18.2 15.3 H16"/><path ${GL} stroke-width="1.3" d="M8.5 6.5 Q9.5 5 8.5 3.5 M12.5 6.5 Q13.5 5 12.5 3.5"/>`), // cookbooks: teacup
+  EMBLEM(`<circle ${GL} stroke-width="1.8" cx="12" cy="12" r="8.6"/><path ${G} d="M12 4.5 L14 12 L12 19.5 L10 12 Z"/><path ${G} opacity="0.75" d="M4.5 12 L12 10.2 L19.5 12 L12 13.8 Z"/>`), // adventure: compass
+  EMBLEM(`<circle ${GL} stroke-width="2.6" cx="10" cy="10" r="5.8"/><path ${GL} stroke-width="3.4" d="M14.4 14.4 L19.8 19.8"/>`), // mystery: magnifier
+  EMBLEM(`<path ${G} d="M20 3 C12.5 4 7.5 9 5.2 16.8 L7.2 17 C9 11 13 7 20 3 Z"/><path ${GL} stroke-width="1.6" d="M4 21 L6.4 16.8"/>`), // poetry: quill
+  EMBLEM(`<circle ${G} cx="12" cy="12" r="5.2"/><ellipse ${GL} stroke-width="1.7" cx="12" cy="12" rx="10" ry="3.1" transform="rotate(-20 12 12)"/>`), // science: ringed planet
+  EMBLEM(`<circle ${GL} stroke-width="2.4" cx="7.5" cy="12" r="3.8"/><path ${GL} stroke-width="2.2" d="M11.3 12 H21 M17.2 12 V15.4 M20 12 V14.6"/>`), // rare tomes: key
+  EMBLEM(`<circle ${G} cx="7.5" cy="17" r="2.9"/><circle ${G} cx="17" cy="15" r="2.9"/><path ${GL} stroke-width="1.9" d="M10.2 17 V6.2 L19.7 4.2 V15"/>`), // music: notes
+  EMBLEM(`<path ${GL} stroke-width="1.3" d="M12 21 C6.5 18.5 4.5 12.5 6.5 5 M12 21 C17.5 18.5 19.5 12.5 17.5 5"/>${[[6.6, 8, -40], [5.8, 12, -60], [7, 16, -80], [17.4, 8, 40], [18.2, 12, 60], [17, 16, 80]].map(([x, y, r]) => `<ellipse ${G} cx="${x}" cy="${y}" rx="2.2" ry="1.1" transform="rotate(${r} ${x} ${y})"/>`).join('')}`), // legends: laurel
+];
+const idHash = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+
 export function bookHtml(b, count = 1) {
   if (!count) return '<div class="book unknown">?</div>';
-  return `<div class="book ${b.rarity}" style="background:${b.color}"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span>${count > 1 ? `<span class="count">×${count}</span>` : ''}</div>`;
+  const h = idHash(b.id);
+  const pat = COVER_PATTERNS[h % COVER_PATTERNS.length];
+  const plate = (h >> 5) % 2 === 0;
+  return `<div class="book ${b.rarity} pat-${pat}${plate ? ' plate' : ''}" style="--bc:${b.color}">
+    <span class="rar">${RARITY[b.rarity].name}</span>
+    <span class="b-emblem">${GENRE_EMBLEMS[b.room % GENRE_EMBLEMS.length]}</span>
+    <span class="b-title">${b.title}</span>${count > 1 ? `<span class="count">×${count}</span>` : ''}${b.rarity === 'L' ? '<i class="b-shine"></i>' : ''}
+  </div>`;
 }
 
 export function rewardsHtml(list) {
@@ -485,12 +516,15 @@ export class Screens {
     let hd;
     let cat = startCat || 'all';
     const item = (ico, title, desc, btn) => `<div class="shop-item"><div class="si-ico">${ico}</div><div class="si-body"><b>${title}</b><div>${desc}</div></div>${btn}</div>`;
+    // Every cheese price can also be paid in ads: progress is kept, so you can spread it out.
+    const adAlt = (key, price) => `<button class="btn ad ad-alt" data-adbuy="${key}" data-price="${price}" title="Watch ads instead of paying cheese">📺 ${g.adBuyProgress(key)}/${g.adsFor(price)}</button>`;
+    const pay = (key, price, cheeseBtn) => `<span class="btn-stack">${cheeseBtn}${adAlt(key, price)}</span>`;
     const furnRow = (f) => {
       const own = g.ownsFurniture(f.id);
       const rar = `<span style="color:${RARITY[f.rarity].color};font-weight:700">${RARITY[f.rarity].name}</span>`;
       const tag = f.festival ? ' · 🎉 limited' : f.branch ? ` · only in ${g.branch().name}` : '';
       return item(f.icon, f.name, `${rar} · +${Math.round(FURNITURE_BONUS[f.rarity] * 100)}% income${tag}<br><i>${f.desc}</i>`,
-        own ? '<button class="btn plain" disabled>Owned ✓</button>' : `<button class="btn gold" data-f="${f.id}"><span class="ico ico-cheese"></span>${f.price}</button>`);
+        own ? '<button class="btn plain" disabled>Owned ✓</button>' : pay(`f:${f.id}`, f.price, `<button class="btn gold" data-f="${f.id}"><span class="ico ico-cheese"></span>${f.price}</button>`));
     };
     const furnitureHtml = () => {
       const sale = g.furnitureForSale();
@@ -517,12 +551,12 @@ export class Screens {
         ${item('🧀', `+${SHOP.adCheese} Golden Cheese`, `${g.adCheeseLeft()} left today`, `<button class="btn ad" data-a="adcheese" ${g.adCheeseLeft() <= 0 ? 'disabled' : ''}>Free</button>`)}
         ${item('📖', 'Story Hour ×2', g.storyHourLeft() > 0 ? `Active · ${fmtTime(g.storyHourLeft())} left` : 'Double income for 30 min', `<button class="btn ad" data-a="story" ${g.storyHourFull() ? 'disabled' : ''}>+30m</button>`)}
         <div class="shop-sec">Time warps</div>
-        ${SHOP.warp.map((w, k) => item('⏩', `${w.sec / 3600}h of coins`, `Instantly get ${fmt(g.rewardCoins(w.sec))} coins`, `<button class="btn gold" data-a="warp" data-k="${k}"><span class="ico ico-cheese"></span>${w.cost}</button>`)).join('')}
+        ${SHOP.warp.map((w, k) => item('⏩', `${w.sec / 3600}h of coins`, `Instantly get ${fmt(g.rewardCoins(w.sec))} coins`, pay(`warp:${k}`, w.cost, `<button class="btn gold" data-a="warp" data-k="${k}"><span class="ico ico-cheese"></span>${w.cost}</button>`))).join('')}
         <div class="shop-sec">Library upgrades (kept forever)</div>
-        ${item('🫙', 'Bigger Coin Jar', `Holds ${fmtTime(SHOP.jar[s.shop.jar].sec)} of coins${jarN ? ` → ${fmtTime(jarN.sec)}` : ' (max)'}`, jarN ? `<button class="btn gold" data-a="jar"><span class="ico ico-cheese"></span>${jarN.cost}</button>` : '<button class="btn plain" disabled>MAX</button>')}
-        ${item('🌙', 'Night Shift', `Offline earnings for ${fmtTime(SHOP.offline[s.shop.offline].sec)}${offN ? ` → ${fmtTime(offN.sec)}` : ' (max)'}`, offN ? `<button class="btn gold" data-a="offline"><span class="ico ico-cheese"></span>${offN.cost}</button>` : '<button class="btn plain" disabled>MAX</button>')}
+        ${item('🫙', 'Bigger Coin Jar', `Holds ${fmtTime(SHOP.jar[s.shop.jar].sec)} of coins${jarN ? ` → ${fmtTime(jarN.sec)}` : ' (max)'}`, jarN ? pay('jar:0', jarN.cost, `<button class="btn gold" data-a="jar"><span class="ico ico-cheese"></span>${jarN.cost}</button>`) : '<button class="btn plain" disabled>MAX</button>')}
+        ${item('🌙', 'Night Shift', `Offline earnings for ${fmtTime(SHOP.offline[s.shop.offline].sec)}${offN ? ` → ${fmtTime(offN.sec)}` : ' (max)'}`, offN ? pay('offline:0', offN.cost, `<button class="btn gold" data-a="offline"><span class="ico ico-cheese"></span>${offN.cost}</button>`) : '<button class="btn plain" disabled>MAX</button>')}
         ${item('👓', 'Golden Reading Glasses', `Permanent ×2 income (owned: ${s.shop.perm})`, perm != null ? `<button class="btn gold" data-a="perm"><span class="ico ico-cheese"></span>${perm}</button>` : '<button class="btn plain" disabled>MAX</button>')}
-        ${item('🎁', 'Mystery Book Crate', 'A random book for your album', `<button class="btn gold" data-a="crate"><span class="ico ico-cheese"></span>${SHOP.crate}</button>`)}
+        ${item('🎁', 'Mystery Book Crate', 'A random book for your album', pay('crate:0', SHOP.crate, `<button class="btn gold" data-a="crate"><span class="ico ico-cheese"></span>${SHOP.crate}</button>`))}
         ${furnitureHtml()}
         ${CONFIG.iapEnabled ? `<div class="shop-sec">Support the library</div>
         ${IAP_PRODUCTS.map((p) => item(p.icon, p.title, p.desc, `<button class="btn" data-iap="${p.id}" ${p.id === 'no_ads' && s.removeAds ? 'disabled' : ''}>${p.id === 'no_ads' && s.removeAds ? 'Owned' : p.price}</button>`)).join('')}` : ''}
@@ -545,6 +579,30 @@ export class Screens {
         const y = body.closest('.modal-body')?.scrollTop; render(); if (y != null) body.closest('.modal-body').scrollTop = y;
       }));
       body.querySelectorAll('[data-iap]').forEach((b) => b.addEventListener('click', async () => { sfx.tap(); const ok = await purchase(b.dataset.iap, g); if (ok) { sfx.reward(); render(); } }));
+      body.querySelectorAll('[data-adbuy]').forEach((b) => b.addEventListener('click', () => adBuy(b)));
+    };
+    // Pay with ads: each ad moves the item's progress on; the last one hands it over.
+    const adBuy = async (btn) => {
+      sfx.tap();
+      if (!g.offerReady('adbuy', 30)) { toast('That’s plenty of ads for today. Come back tomorrow! 🌙'); return; }
+      btn.disabled = true;
+      const keep = () => { const y = body.closest('.modal-body')?.scrollTop; render(); if (y != null) body.closest('.modal-body').scrollTop = y; };
+      if (!(await Ads.rewarded('shop_adbuy'))) { keep(); return; }
+      s.stats.adsWatched++; g.useOffer('adbuy');
+      const key = btn.dataset.adbuy; const price = +btn.dataset.price;
+      if (!g.adBuyStep(key, price)) { toast(`📺 ${g.adBuyProgress(key)}/${g.adsFor(price)} — nearly there!`); keep(); return; }
+      const [kind, arg] = key.split(':');
+      if (kind === 'f') {
+        const f = FURN[arg]; const floor = this.ui.world.focusedRoom();
+        g.buyFurniture(f.id, floor, true); sfx.buy(); sfx.sparkle();
+        toast(`${f.icon} ${f.name} is yours!`, 'gold'); this.ui.world.chatter.react(floor, 'furniture');
+      } else {
+        const res = g.shopBuy(kind, +arg, true);
+        if (kind === 'warp') this.celebrate([{ kind: 'coins', amount: res }], centerOf(btn));
+        else if (kind === 'crate') this.bookReveal({ kind: 'book', ...res });
+        else { sfx.levelUp(); toast('Upgraded! ✨', 'gold'); }
+      }
+      keep();
     };
     const act = async (a, k, btn) => {
       sfx.tap();
@@ -570,79 +628,45 @@ export class Screens {
     hd = openModal({ title: '🛒 Shop', body, wide: true });
   }
 
-  /* ---------- prestige ---------- */
-  branch() {
-    const g = this.game; const s = g.s;
-    const cur = g.branch(); const next = g.nextBranch();
-    const pend = g.pendingQuills(); const can = g.canPrestige();
-    const req = !s.rooms[PRESTIGE_ROOM].built;
-    const wait = g.moveWait();
-    const local = FURNITURE.filter((f) => f.branch === next.id).map((f) => `${f.icon} ${f.name}`).join(', ');
-    openModal({
-      title: '🌿 New Branch', wide: true,
-      body: `<div class="branch-card" style="background:${SCENE_BG[cur.scene]}"><b>Now: ${cur.name}</b><div>${cur.blurb}</div><div>Branch bonus ×${cur.mult} · ${s.quills} Golden Quills (+${s.quills * 10}% income)</div></div>
-        <div class="art" style="font-size:34px">🧳🚚</div>
-        <div class="branch-card" style="background:${SCENE_BG[next.scene]}"><b>Next: ${next.name}</b><div>${next.blurb}</div><div>🏠 ${next.building}</div><div>Branch bonus ×${next.mult}</div></div>
-        <div class="big-reward"><span class="ico ico-quill"></span>+${pend} Golden Quills</div>
-        <div class="flavor">The whole library moves with you! Every floor you built comes along with its seats, shelves, librarian, décor and furniture. Only the Book Collection levels and coins start fresh.</div>
-        <div class="muted">Also kept: golden cheese, books, reputation, Shop upgrades and quills (+10% income each, forever).${local ? `<br>New in the ${next.name} shop: ${local}.` : ''}</div>
-        ${req ? `<div class="muted" style="color:#b5523b">Build the ${ROOMS[PRESTIGE_ROOM].name} to unlock new branches.</div>` : pend < 1 ? '<div class="muted" style="color:#b5523b">Earn more coins in this branch to gain a quill.</div>' : wait > 0 ? `<div class="muted" style="color:#b5523b">🚚 The moving van is resting after the last move. Ready in ${fmtTime(wait)}.</div>` : ''}`,
-      buttons: [{
-        label: `Open ${next.name}`, cls: 'gold', disabled: !can,
-        onClick: () => { this.confirmPrestige(pend, next); },
-      }],
-    });
-  }
-
-  // Shown right after moving: a warm welcome and what came along.
-  arrival(res) {
-    const g = this.game; const to = res.to;
-    const gift = 10 + 5 * Math.min(8, g.s.branch);
-    const local = FURNITURE.filter((f) => f.branch === to.id);
-    openModal({
-      title: `🧳 Welcome to ${to.name}!`,
-      body: `<div class="art">${to.art || '🏡🐭'}</div>
-        <div class="flavor">${to.building} The movers carried all <b>${res.floors} floors</b> across, chairs, shelves, rugs and paintings included.</div>
-        <div class="big-reward"><span class="ico ico-quill"></span>+${res.gained} Golden Quills</div>
-        <div class="muted">Book Collection levels start fresh, so upgrade them again for big ×2 milestones. Branch bonus now ×${to.mult}.${local.length ? `<br>The local shop sells ${local.map((f) => `${f.icon} ${f.name}`).join(' and ')}.` : ''}</div>`,
-      buttons: [
-        this.adBtn(`Housewarming party! <small>+${gift} golden cheese</small>`, 'housewarming', () => { g.addCheese(gift); this.celebrate([{ kind: 'cheese', amount: gift }]); toast('What a party! Every neighbour brought cheese. 🧀', 'gold'); }),
-        { label: 'Let’s read!', cls: 'plain', onClick: () => sfx.fanfare() },
-      ],
-    });
-  }
-
-  confirmPrestige(pend, next) {
-    openModal({
-      title: 'Are you sure?',
-      body: `<div class="art">🧳🐭</div><div class="flavor">Pack up the whole library and move to <b>${next.name}</b>? You'll earn <b>${pend} Golden Quills</b>. Your floors, décor and furniture come along.</div>`,
-      row: true,
-      buttons: [
-        { label: 'Not yet', cls: 'plain' },
-        { label: "Let's go!", cls: 'gold', onClick: () => { this.ui.doPrestige(); } },
-      ],
-    });
-  }
+  /* ---------- moving (see places.js) ---------- */
+  branch() { this.move(); }
 
   /* ---------- floors list ---------- */
   floors() {
     const g = this.game; const s = g.s;
-    const next = g.nextFloor();
-    const body = h(`<div>${ROOMS.map((r, k) => {
+    const next = g.nextFloor(); const cap = g.floorCap();
+    const floorRows = ROOMS.map((r, k) => {
       const st = s.rooms[k];
-      const status = st.built ? `${fmt(g.roomIncome(k))}/s · Lv ${st.lvl}` : st.buildEnd ? `Building… ${fmtTime(g.buildRemaining(k))}` : k === next ? `Unlock for ${fmt(r.unlock)} coins` : 'Locked';
+      const beyond = !st.built && !st.buildEnd && k >= cap;
+      const status = st.built ? `${fmt(g.roomIncome(k))}/s · Lv ${st.lvl}` : st.buildEnd ? `Building… ${fmtTime(g.buildRemaining(k))}` : k === next ? `Unlock for ${fmt(r.unlock)} coins` : beyond ? 'Needs a bigger site 🚚' : 'Locked';
       return `<button class="floor-item ${st.built || st.buildEnd || k === next ? '' : 'locked'}" data-k="${k}">
         <span class="fi-sw" style="background:repeating-linear-gradient(90deg,${r.pal.wall} 0 5px,${r.pal.wall2} 5px 10px)"></span>
-        <div class="fi-body"><b>${k + 1}. ${st.built || k <= next ? r.name : '???'}</b><div>${status}</div></div><span>${st.built ? '›' : st.buildEnd ? '🔨' : k === next ? '🎈' : '🔒'}</span></button>`;
-    }).reverse().join('')}</div>`);
+        <div class="fi-body"><b>${k + 1}. ${st.built || k <= next ? r.name : '???'}</b><div>${status}</div></div><span>${st.built ? '›' : st.buildEnd ? '🔨' : k === next ? '🎈' : beyond ? '🚚' : '🔒'}</span></button>`;
+    }).reverse().join('');
+    const wingRows = WINGS.map((w) => {
+      const st = g.wing(w.id); const open = g.wingOpen(w.id);
+      const status = st.built ? `Lv ${st.lvl} · +${Math.round(E.wingsMult({ wings: { [w.id]: st } }) * 100 - 100)}% library income` : st.buildEnd ? `Building… ${fmtTime(g.wingRemaining(w.id))}` : open ? `Build for ${fmt(w.unlock)} coins` : 'Plot opens at a bigger site 🚚';
+      return `<button class="floor-item ${st.built || open ? '' : 'locked'}" data-w="${w.id}"><span class="fi-sw fi-ico">${w.icon}</span><div class="fi-body"><b>${w.name}</b><div>${status}</div></div><span>${st.built ? '›' : st.buildEnd ? '🔨' : open ? '➕' : '🔒'}</span></button>`;
+    }).join('');
+    const d = s.deep;
+    const deepRow = d.open ? `<button class="floor-item" data-deep><span class="fi-sw fi-ico">⛏️</span><div class="fi-body"><b>The Deep Stacks</b><div>${g.hallsDone()}/8 halls restored · ${Object.keys(d.fossils).length}/4 fossils</div></div><span>›</span></button>`
+      : `<div class="floor-item locked"><span class="fi-sw fi-ico">❓</span><div class="fi-body"><b>???</b><div>Something is hidden under the vault… (build the ${ROOMS[4].name})</div></div><span>🔒</span></div>`;
+    const siteRow = g.siteFull() || s.move.end ? `<button class="floor-item move-row" data-move><span class="fi-sw fi-ico">🚚</span><div class="fi-body"><b>${s.move.end ? (g.moveReady() ? 'Ready to move in!' : `Movers at work: ${fmtTime(g.moveRemaining())}`) : `This site is full (${cap} floors)`}</b><div>Move to ${g.nextBranch().name}: ${g.nextBranch().floors} floors, ${g.nextBranch().plots} wing plots</div></div><span>›</span></button>` : '';
+    const body = h(`<div>${siteRow}<div class="section-title">Floors <small>${g.builtCount()}/${cap} at ${g.branch().name}</small></div>${floorRows}
+      <div class="section-title">Wings <small>beside the library · swipe sideways to visit</small></div>${wingRows}
+      <div class="section-title">Underground</div>${deepRow}</div>`);
     body.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => {
       const k = +b.dataset.k; const st = s.rooms[k];
       sfx.tap(); closeModal();
       if (st.built) this.ui.openRoom(k);
       else if (st.buildEnd) { this.ui.world.panToRoom(k); this.construction(k); }
       else if (k === next) { this.ui.world.panToTop(); this.build(k); }
+      else if (k >= cap) setTimeout(() => this.move(), 200);
     }));
-    openModal({ title: '🏛️ Library Floors', body });
+    body.querySelectorAll('[data-w]').forEach((b) => b.addEventListener('click', () => { sfx.tap(); closeModal(); const id = b.dataset.w; this.ui.panToWing(id); setTimeout(() => this.wing(id), 250); }));
+    body.querySelector('[data-deep]')?.addEventListener('click', () => { sfx.tap(); closeModal(); setTimeout(() => this.deep(), 200); });
+    body.querySelector('[data-move]')?.addEventListener('click', () => { sfx.tap(); closeModal(); setTimeout(() => this.move(), 200); });
+    openModal({ title: '🏛️ Your Library', body });
   }
 
   /* ---------- reputation ---------- */
@@ -665,10 +689,23 @@ export class Screens {
       <div class="set-row">🔔 Sound effects <button class="toggle ${st.sfx ? 'on' : ''}" data-t="sfx"></button></div>
       <div class="set-row">📳 Vibration <button class="toggle ${st.haptics ? 'on' : ''}" data-t="haptics"></button></div>
       <div class="set-row">💬 Mouse chatter <button class="toggle ${st.chatter ? 'on' : ''}" data-t="chatter"></button></div>
+      <div class="set-row">🍂 Season speed <button class="btn plain" style="min-height:34px;font-size:13px;min-width:96px" data-seasons>${SPEED_LABEL[st.seasonSpeed || 'normal']}</button></div>
+      <div class="muted" style="text-align:left;margin:-4px 4px 4px;font-size:11.5px" data-seasons-note></div>
+      <div class="set-row">🖥️ Graphics <button class="btn plain" style="min-height:34px;font-size:13px;min-width:96px" data-gfx>${GRAPHICS_LABEL[st.graphics || 'auto']}</button></div>
+      <div class="muted" style="text-align:left;margin:-4px 4px 4px;font-size:11.5px" data-gfx-note></div>
       <div class="set-row">🔔 Reminders <button class="toggle ${st.notifications ? 'on' : ''}" data-t="notifications"></button></div>
       <div class="set-row">📜 Replay the story <button class="btn plain" style="min-height:34px;font-size:13px" data-replay>Replay</button></div>
       ${Ads.provider === 'admob' ? '<div class="set-row">🔒 Ad privacy options <button class="btn plain" style="min-height:34px;font-size:13px" data-privacy>Open</button></div>' : ''}
       <div class="set-row">🧹 Reset progress <button class="btn red" style="min-height:34px;font-size:13px" data-reset>Reset</button></div>
+      ${CONFIG.devTools ? `<div class="dev-box"><b>🛠️ Developer tools</b> <small>for testing: turn off in src/config.js before publishing</small>
+        <div class="dev-grid">
+          <button class="btn gold" data-dev="cheese1">+1,000 🧀</button>
+          <button class="btn gold" data-dev="cheese10">+10,000 🧀</button>
+          <button class="btn" data-dev="coinsHour">+1 hour of coins</button>
+          <button class="btn" data-dev="coinsDay">+1 day of coins</button>
+          <button class="btn plain" data-dev="timers">⏩ Finish all timers</button>
+          <button class="btn plain" data-dev="ads">📺 Instant ads: <b data-devads>${Ads.devInstant ? 'ON' : 'OFF'}</b></button>
+        </div></div>` : ''}
       <div class="credits">
         <b>Whiskerwood Library</b> v${CONFIG.version} · ads: ${Ads.provider}<br>
         Music: original waltz composed for this game, performed live by Web Audio synths.<br>
@@ -683,6 +720,29 @@ export class Screens {
       if (k === 'notifications' && st[k]) this.ui.native?.askPermission?.();
     }));
     body.querySelector('[data-privacy]')?.addEventListener('click', () => Ads.privacyOptions());
+    body.querySelectorAll('[data-dev]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.dev; sfx.reward();
+      if (k === 'cheese1' || k === 'cheese10') { const n = k === 'cheese1' ? 1000 : 10000; g.addCheese(n); toast(`🛠️ +${fmt(n)} golden cheese`, 'gold'); }
+      if (k === 'coinsHour' || k === 'coinsDay') { const amt = g.devCoins(k === 'coinsHour' ? 3600 : 86400); toast(`🛠️ +${fmt(amt)} coins`, 'gold'); }
+      if (k === 'timers') { g.devFinishTimers(); toast('🛠️ Every timer is finished'); }
+      if (k === 'ads') { Ads.devInstant = !Ads.devInstant; g.s.flags.devInstantAds = Ads.devInstant; b.querySelector('[data-devads]').textContent = Ads.devInstant ? 'ON' : 'OFF'; toast(Ads.devInstant ? '🛠️ Rewarded ads now pay out instantly' : '🛠️ Ads play normally again'); }
+    }));
+    // Season speed: how long a Mouse Year lasts. Your place in the year is kept.
+    const seasonNote = () => { body.querySelector('[data-seasons-note]').textContent = `A Mouse Year lasts ${Math.round((g.seasonSec() * 4) / 60)} minutes of play — every season comes round with its festivals.`; };
+    seasonNote();
+    body.querySelector('[data-seasons]').addEventListener('click', (e) => {
+      const cur = st.seasonSpeed || 'normal';
+      const next = SPEED_ORDER[(SPEED_ORDER.indexOf(cur) + 1) % SPEED_ORDER.length];
+      g.setSeasonSpeed(next); sfx.tap();
+      e.currentTarget.textContent = SPEED_LABEL[next]; seasonNote();
+    });
+    const gfxNote = () => { body.querySelector('[data-gfx-note]').textContent = { auto: 'Adjusts itself to keep everything smooth on your phone.', beautiful: 'Sharpest picture. Best on newer phones.', balanced: 'A little softer, much lighter on the battery.', smooth: 'Fastest: for older phones and long play sessions.' }[st.graphics || 'auto']; };
+    gfxNote();
+    body.querySelector('[data-gfx]').addEventListener('click', (e) => {
+      const next = GRAPHICS[(GRAPHICS.indexOf(st.graphics || 'auto') + 1) % GRAPHICS.length];
+      this.ui.quality?.setMode(next); sfx.tap();
+      e.currentTarget.textContent = GRAPHICS_LABEL[next]; gfxNote();
+    });
     body.querySelector('[data-replay]').addEventListener('click', () => {
       closeModal();
       g.s.story.seen = g.s.story.seen.filter((id) => id !== 'intro');
@@ -698,3 +758,5 @@ export class Screens {
     openModal({ title: '⚙️ Settings', body });
   }
 }
+
+Object.assign(Screens.prototype, placeScreens);

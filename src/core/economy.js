@@ -2,6 +2,9 @@
 import { ROOMS, MILESTONES, LIMITS, GROWTH, DECOR, BOOKS, BOOK_BONUS, SET_BONUS } from '../data/rooms.js';
 import { branchInfo } from '../data/branches.js';
 import { furnitureBonus } from '../data/furniture.js';
+import { WINGS, wingMult, WING_DECOR_BONUS, wingFurnitureCount } from '../data/wings.js';
+import { HALL_BONUS, FOSSIL_BONUS, TALES_MULT } from '../data/deep.js';
+import { BIZ, bizBonus, HALL_PER_LVL, LIFT_STOP_BONUS } from '../data/mole.js';
 
 export const QUILL_BONUS = 0.1; // +10% income per Golden Quill
 export const BOOK_MILESTONES = 5; // the first 5 milestones (Lv 10/25/50/100/150) each deliver a book
@@ -42,13 +45,37 @@ export function roomBaseIncome(state, i, r = state.rooms[i]) {
   return d.base * r.lvl * Math.pow(2, milestoneCount(r.lvl)) * seatMult(r) * shelfMult(r) * staffMult(r) * decorMult(r) * albumMult(state, i);
 }
 
-// Multipliers that last forever (this branch).
+// Wings: every wing level adds to the whole library's income.
+export function wingsMult(state) {
+  let m = 1;
+  for (const w of WINGS) { const st = state.wings?.[w.id]; if (st?.built) m += wingMult(st.lvl) + WING_DECOR_BONUS * wingFurnitureCount(st); }
+  return m;
+}
+export const hallsRestored = (state) => Object.values(state.deep?.halls || {}).filter((v) => v >= 3).length;
+export const fossilsFound = (state) => Object.keys(state.deep?.fossils || {}).length;
+// The Deep Stacks: restored halls and fossils add up; the Mighty Tales doubles everything.
+// Mole City: lift stops, mole businesses and upgraded halls.
+export function moleBonus(state) {
+  const d = state.deep; if (!d) return 0;
+  let m = LIFT_STOP_BONUS * (d.lift || 0);
+  for (const b of BIZ) m += bizBonus(d.biz?.[b.id]);
+  for (const v of Object.values(d.hallLvl || {})) m += HALL_PER_LVL * Math.max(0, v - 1);
+  return m;
+}
+export function deepMult(state) {
+  if (!state.deep?.open) return 1;
+  return (1 + HALL_BONUS * hallsRestored(state) + FOSSIL_BONUS * fossilsFound(state) + moleBonus(state)) * (state.deep.tales ? TALES_MULT : 1);
+}
+
+// Multipliers that last forever.
 export function permanentMult(state) {
   return (1 + QUILL_BONUS * (state.quills || 0))
     * branchInfo(state.branch || 0).mult
     * (1 + REP_BONUS * ((state.rep || 1) - 1))
     * Math.pow(2, state.shop?.perm || 0)
-    * (1 + furnitureBonus(state.furniture?.owned));
+    * (1 + furnitureBonus(state.furniture?.owned))
+    * wingsMult(state)
+    * deepMult(state);
 }
 
 // Timed boosts (ads, royal visits). Returns multiplier for room i (or global when i == null).
@@ -148,8 +175,10 @@ export function quillsForEarnings(earned) {
   return Math.floor(Math.pow(earned / 1e12, 0.33) * 3);
 }
 
+// Moving no longer resets anything, so quills are a modest thank-you from each town you leave:
+// 1 for the first move, 2 for the second, and so on.
 export function pendingQuills(state) {
-  return Math.max(0, quillsForEarnings(state.branchEarned || 0));
+  return 1 + (state.branch || 0);
 }
 
 /* ---------------- Reputation ---------------- */

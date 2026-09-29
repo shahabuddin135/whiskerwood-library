@@ -6,6 +6,7 @@ import * as E from '../core/economy.js';
 import { fmt } from '../core/format.js';
 import { sfx } from '../audio/sfx.js';
 import { Ads } from '../ads/ads.js';
+import { bookHtml } from './screens.js';
 
 const SEAT_ICON = { armchair: '🛋️', beanbag: '🧸', cafe: '☕', trunk: '🧳', wingback: '💺', bench: '🪑', stool: '🔭', throne: '👑', piano: '🎹', royal: '🛋️' };
 const SEAT_NAME = { armchair: 'Armchairs', beanbag: 'Beanbags', cafe: 'Café Tables', trunk: 'Sea Trunks', wingback: 'Wingback Chairs', bench: 'Garden Benches', stool: 'Star Stools', throne: 'Velvet Thrones', piano: 'Piano Benches', royal: 'Royal Sofas' };
@@ -137,8 +138,7 @@ export class RoomSheet {
     const books = BOOKS.filter((b) => b.room === this.i);
     this.refs.books.innerHTML = books.map((b) => {
       const n = s.album[b.id] || 0;
-      return n ? `<div class="book ${b.rarity}" data-book="${b.id}" style="background:${b.color};cursor:pointer"><span class="rar">${RARITY[b.rarity].name}</span><span>${b.title}</span></div>`
-        : `<div class="book unknown" data-book="${b.id}">?</div>`;
+      return `<div data-book="${b.id}" style="cursor:pointer">${bookHtml(b, n)}</div>`;
     }).join('');
     this.refs.books.querySelectorAll('[data-book]').forEach((el) => el.addEventListener('click', () => {
       const b = BOOKS.find((x) => x.id === el.dataset.book); sfx.tap();

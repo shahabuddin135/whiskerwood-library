@@ -10,7 +10,7 @@ export const GROWTH = { level: 1.15, seat: 20, shelf: 50, staff: 2, decor: 10 };
 
 // Per-floor economy curve. Floor i: base income = BR^i, level cost = L0 * LR^i.
 export const ECON = { BR: 9, L0: 5, LR: 13 };
-const BUILD_SECONDS = [0, 5, 15, 30, 60, 120, 240, 480, 900, 1800];
+const BUILD_SECONDS = [0, 5, 15, 30, 60, 240, 900, 1800, 3600, 7200];
 const UNLOCK = [0, 40e3, 9e6, 1.75e8, 3e9, 3.5e10, 4e11, 4.5e12, 5.5e13, 7e14];
 
 export const DECOR = [

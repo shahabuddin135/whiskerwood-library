@@ -4,6 +4,7 @@ import { L, IW, FH, WALL } from './layout.js';
 import { rr, fillRR, ell, circ, shade, rng, star, rgba } from './draw.js';
 import { FLOOR_LOOK, LIVE, drawCeiling, drawWall, drawBoard, drawRug, drawLamp, drawArt, drawDesk } from './furnish.js';
 import { paintSides, BEAM } from './buildings.js';
+import { texRect } from './textures.js';
 
 export const SEAT_H = { armchair: 16, beanbag: 11, cafe: 15, trunk: 17, wingback: 16, bench: 15, stool: 23, throne: 16, piano: 16, royal: 16 };
 const WOOD = '#8a5a3a';
@@ -100,6 +101,35 @@ function wallpaper(ctx, pal, w, h, seed) {
     default: break;
   }
   paperGrain(ctx, 0, 0, w, h, seed);
+  texRect(ctx, 'plaster', 0, 0, w, h, 1);
+}
+
+/* ---------------- book spines ---------------- */
+const GOLD = '#e8c86a';
+// One book spine (x, y = top-left). Rounded shading plus a random binding style:
+// gold raised bands, a paper title label, leather-capped cloth, or tooled dots.
+function spine(ctx, x, y, w, h, col, R) {
+  ctx.fillStyle = col; ctx.fillRect(x, y, w, h);
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0.3)'); g.addColorStop(0.35, 'rgba(255,255,255,0.06)'); g.addColorStop(1, 'rgba(0,0,0,0.3)');
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  const style = R();
+  if (style < 0.4) { // raised bands, gold tooled
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; [0.14, 0.3, 0.7, 0.86].forEach((f) => ctx.fillRect(x, y + h * f, w, 0.8));
+    ctx.fillStyle = GOLD; [0.14, 0.86].forEach((f) => ctx.fillRect(x, y + h * f - 0.6, w, 0.55));
+    ctx.fillRect(x + w * 0.3, y + h * 0.46, w * 0.4, h * 0.08);
+  } else if (style < 0.65) { // paper title label
+    ctx.fillStyle = '#f5ecd6'; ctx.fillRect(x + w * 0.16, y + h * 0.26, w * 0.68, h * 0.24);
+    ctx.fillStyle = 'rgba(60,40,30,0.55)'; ctx.fillRect(x + w * 0.3, y + h * 0.32, w * 0.4, 0.5); ctx.fillRect(x + w * 0.3, y + h * 0.4, w * 0.4, 0.5);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x, y + h * 0.88, w, 0.6);
+  } else if (style < 0.85) { // leather caps top and bottom on a cloth body
+    ctx.fillStyle = 'rgba(40,20,10,0.32)'; ctx.fillRect(x, y, w, h * 0.17); ctx.fillRect(x, y + h * 0.83, w, h * 0.17);
+    ctx.fillStyle = GOLD; ctx.fillRect(x, y + h * 0.17, w, 0.5); ctx.fillRect(x, y + h * 0.83 - 0.5, w, 0.5);
+  } else { // tooled dots down the spine
+    ctx.fillStyle = 'rgba(255,240,200,0.6)';
+    for (let py = y + 3; py < y + h - 2; py += 2.6) ctx.fillRect(x + w * 0.5 - 0.35, py, 0.7, 0.7);
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x + 0.3, y + 0.5, w - 0.6, 0.6);
 }
 
 /* ---------------- shelves ---------------- */
@@ -133,12 +163,10 @@ function bookshelf(ctx, x, top, w, bot, def, seed, fill) {
       const col = def.books[Math.floor(R() * def.books.length)];
       const lean = R() < 0.08 && bx + bw + 4 < limit;
       if (lean) {
-        ctx.save(); ctx.translate(bx, yb); ctx.rotate(-0.28); ctx.fillStyle = col; ctx.fillRect(0, -bh, bw, bh); ctx.restore();
+        ctx.save(); ctx.translate(bx, yb); ctx.rotate(-0.28); spine(ctx, 0, -bh, bw, bh, col, R); ctx.restore();
         bx += bw + 3.5;
       } else {
-        ctx.fillStyle = col; ctx.fillRect(bx, yb - bh, bw, bh);
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(bx + 0.5, yb - bh + 2, bw - 1, 0.8);
-        ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(bx + bw - 0.8, yb - bh, 0.8, bh);
+        spine(ctx, bx, yb - bh, bw, bh, col, R);
         bx += bw + 0.3;
       }
     }
@@ -328,8 +356,13 @@ export function shelfFill(lvl) {
 function bookPile(ctx, x, y, cols, n, R) {
   for (let k = 0; k < n; k++) {
     const w = 13 + R() * 6; const off = (R() - 0.5) * 3;
-    fillRR(ctx, x - w / 2 + off, y - (k + 1) * 3.4, w, 3.2, 0.8, cols[Math.floor(R() * cols.length)]);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x - w / 2 + off + w - 2.2, y - (k + 1) * 3.4 + 0.6, 1.6, 2);
+    const bx = x - w / 2 + off; const by = y - (k + 1) * 3.4;
+    fillRR(ctx, bx, by, w, 3.2, 0.8, cols[Math.floor(R() * cols.length)]);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(bx + 0.5, by + 0.3, w - 1, 0.7); // rounded spine
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(bx + 0.5, by + 2.5, w - 1, 0.6);
+    ctx.fillStyle = GOLD; ctx.fillRect(bx + 2.2, by + 0.4, 0.6, 2.4); ctx.fillRect(bx + w - 4.6, by + 0.4, 0.6, 2.4); // gold bands
+    ctx.fillStyle = '#f6ecd6'; ctx.fillRect(bx + w - 2.2, by + 0.6, 1.6, 2); // page edges
+    ctx.fillStyle = 'rgba(160,130,90,0.6)'; ctx.fillRect(bx + w - 2.2, by + 1.5, 1.6, 0.3);
   }
 }
 
@@ -439,8 +472,9 @@ export function paintRoomBack(ctx, i, def, r, fill, furn = {}, scene = 'meadow',
   // bookshelves fill up as the collection grows; piles appear on top at Lv 10/25/50
   for (let k = 0; k < r.shelves; k++) bookshelf(ctx, L.shelves[k], L.shelfTop, L.shelfW, L.shelfBot, def, i * 31 + k * 7 + 3, fill);
   const Rp = rng(i * 13 + 5);
-  const piles = r.lvl >= 50 ? r.shelves : r.lvl >= 25 ? Math.min(2, r.shelves) : r.lvl >= 10 ? 1 : 0;
-  for (let k = 0; k < piles; k++) bookPile(ctx, L.shelves[k] + 14 + Rp() * 24, L.shelfTop - 3, def.books, 2 + Math.floor(Rp() * 3) + (r.lvl >= 100 ? 1 : 0), Rp);
+  // (never on the first shelf: that's right under the painting, and a tall pile would cover its frame)
+  const piles = r.lvl >= 50 ? 3 : r.lvl >= 25 ? 2 : r.lvl >= 10 ? 1 : 0;
+  [1, 2, 3].filter((k) => k < r.shelves).slice(0, piles).forEach((k) => bookPile(ctx, L.shelves[k] + 14 + Rp() * 24, L.shelfTop - 3, def.books, 2 + Math.floor(Rp() * 3) + (r.lvl >= 100 ? 1 : 0), Rp));
 
   // floor
   ctx.fillStyle = pal.floor; ctx.fillRect(0, L.floorTop, IW, L.beamTop - L.floorTop);

@@ -10,6 +10,7 @@ import { drawCat, drawWorm, ell, circ, star, fillRR } from './draw.js';
 import { ROOMS, LIMITS } from '../data/rooms.js';
 import { sfx } from '../audio/sfx.js';
 import { fmt } from '../core/format.js';
+import { glow as glowSprite } from './glow.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -281,9 +282,7 @@ export class Events {
     const lb = this.lost;
     if (lb && lb.i === i) {
       const glow = 0.5 + 0.5 * Math.sin(t * 5);
-      const g = ctx.createRadialGradient(lb.x, lb.y - 3, 1, lb.x, lb.y - 3, 16);
-      g.addColorStop(0, `rgba(255,230,140,${0.55 + glow * 0.3})`); g.addColorStop(1, 'rgba(255,230,140,0)');
-      ctx.fillStyle = g; ctx.fillRect(lb.x - 16, lb.y - 19, 32, 32);
+      glowSprite(ctx, lb.x, lb.y - 3, 16, '255,230,140', 0.55 + glow * 0.3);
       fillRR(ctx, lb.x - 6, lb.y - 3.5, 12, 3.5, 0.8, lb.color);
       ctx.fillStyle = '#fbf6ea'; ctx.fillRect(lb.x + 3.5, lb.y - 3, 2, 2.6);
       star(ctx, lb.x + Math.cos(t * 3) * 9, lb.y - 8 + Math.sin(t * 3) * 3, 1.6 + glow, '#fff3b0');
