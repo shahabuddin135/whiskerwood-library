@@ -5,6 +5,8 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: 
 const { Game } = await import('../src/core/game.js');
 const { freshState } = await import('../src/core/save.js');
 const { ROOMS } = await import('../src/data/rooms.js');
+const { WINGS } = await import('../src/data/wings.js');
+const { DEEP_COLS, DEEP_ROWS } = await import('../src/data/deep.js');
 
 const g = new Game(freshState());
 const fail = (m) => { console.error('FAIL:', m); process.exitCode = 1; };
@@ -31,11 +33,42 @@ for (let step = 0; step < 4 * 3600; step++) {
   if (qTrack && g.s.rooms[q.room]?.built) g.buy(q.room, qTrack);
   if (q.type === 'decor' && g.s.rooms[q.room]?.built) { const k = g.s.rooms[q.room].decor.indexOf(false); if (k >= 0) g.buy(q.room, `decor${k}`); }
   if (g.questProgress().done) { const got = g.claimQuest(); log.push(`${Math.round(t / 60)}m quest #${q.id}: ${q.text} -> ${got.map((r) => r.kind).join(',')}`); }
+  // wings: build what's open, serve scones, level up for quests
+  for (const w of WINGS) { const st = g.wing(w.id); if (g.wingOpen(w.id) && !st.built && !st.buildEnd && g.s.coins >= w.unlock && g.startWing(w.id)) st.buildEnd = Date.now() - 1; }
+  if (q.type === 'wingLvl') g.buyWing(q.wing, 1);
+  if (q.type === 'wingBuilt' && !g.wing(q.wing).built && !g.wing(q.wing).buildEnd && g.s.coins >= WINGS.find((w) => w.id === q.wing).unlock && g.startWing(q.wing)) g.wing(q.wing).buildEnd = Date.now() - 1;
+  if (q.type === 'scones' && g.wing('cafe').built) { g.wing('cafe').next = 0; g.doWingAction('cafe'); }
+  // the Deep Stacks: the crew works on shortened timers (like ads or cheese speed-ups)
+  let crewWants = false;
+  if (g.s.deep.open && !g.s.deep.tales) {
+    for (const j of g.s.deep.jobs) { if (j.simEnd == null) j.simEnd = step + Math.ceil(j.total * 0.3); if (step >= j.simEnd) j.end = Date.now() - 1; }
+    for (let r = 0; r < DEEP_ROWS && g.freeCrews() > 0; r++) for (let c = 0; c < DEEP_COLS && g.freeCrews() > 0; c++) {
+      const a = g.cellAction(c, r);
+      if (a === 'door') g.openDoor();
+      else if (a === 'dig') { if (g.s.coins >= g.digCost(c, r)) g.startDig(c, r); else crewWants = true; }
+      else if (a === 'restore') { if (g.s.coins >= g.restoreCost(c, r)) g.startRestore(c, r); else crewWants = true; }
+    }
+    if (g.s.deep.door && !g.s.deep.tales) g.claimTales();
+  }
+  // Mole City: the lift, new shops (timers skipped, like a speed-up) and shop levels, for quests
+  if (g.moleCityOpen()) {
+    if (q.type === 'liftStops' && !g.liftBlocker() && g.s.coins >= g.liftCost()) g.buyLiftStop();
+    const spot = g.freeBizSpot();
+    if (q.type === 'bizBuilt' && !g.biz(q.biz) && spot && g.s.coins >= g.bizBuildCost(q.biz)) g.buildBiz(q.biz, spot[0], spot[1]);
+    for (const b of Object.values(g.s.deep.biz)) if (!b.built) b.buildEnd = Date.now() - 1;
+    if (q.type === 'bizLvl') g.buyBizLevel(q.biz, 1);
+  }
+  // moving: when the site is full, buy the land and move in
+  if (g.siteFull() && g.canBuyLand()) g.buyLand();
+  if (g.s.move.end) { g.s.move.end = Date.now() - 1; if (g.moveReady()) { const res = g.prestige(); log.push(`${Math.round(t / 60)}m moved to ${res.to.name} (+${res.gained} quills)`); } }
   // build next floor, then buy cheapest upgrades
   const nx = g.nextFloor();
   // build timers use wall-clock time, so the bot skips them (like an ad/cheese speed-up)
   if (nx > 0 && g.constructing() < 0 && g.s.coins >= ROOMS[nx].unlock && g.startBuild(nx)) g.finishBuildNow(nx);
-  let saving = nx > 0 && (ROOMS[nx].unlock - g.s.coins) / g.income() < 600;
+  let saving = (nx > 0 && (ROOMS[nx].unlock - g.s.coins) / g.income() < 600) || (g.siteFull() && !g.s.move.end && (g.moveCost() - g.s.coins) / g.income() < 900);
+  if (crewWants && g.freeCrews() > 0) saving = true; // save up for the mole crew
+  if (q.type === 'wingBuilt' && !g.wing(q.wing).built) saving = true; // and for the quest's new wing
+  if (['liftStops', 'bizBuilt', 'bizLvl'].includes(q.type)) saving = true; // and for Mole City quests
   if (q.room != null && g.s.rooms[q.room]?.built && (qTrack || q.type === 'decor')) {
     const tr = qTrack || `decor${g.s.rooms[q.room].decor.indexOf(false)}`;
     const c = g.cost(q.room, tr);
@@ -51,7 +84,8 @@ for (let step = 0; step < 4 * 3600; step++) {
   if (stuckFor > 3600) { fail(`quest stuck for an hour: ${JSON.stringify(g.s.quest)} progress ${JSON.stringify(g.questProgress())}`); break; }
 }
 console.log(log.slice(0, 22).join('\n'));
-console.log(`... ${log.length} quests done in 4h. rep ${g.s.rep}, cheese ${g.s.cheese}, floors ${g.builtCount()}, income ${g.income().toExponential(2)}/s`);
+console.log(log.filter((l) => l.includes('moved')).join('\n'));
+console.log(`... ${log.length} quests done in 4h. rep ${g.s.rep}, cheese ${g.s.cheese}, floors ${g.builtCount()}, site ${g.branch().name}, wings ${WINGS.map((w) => g.wing(w.id).lvl).join('/')}, halls ${g.hallsDone()}/8, lift ${g.s.deep.lift}, shops ${g.bizCount()}, income ${g.income().toExponential(2)}/s`);
 
 // daily
 const d1 = g.dailyStatus(); if (!d1.canClaim || d1.day !== 0) fail('daily should start at day 0');
@@ -62,15 +96,20 @@ g.s.daily.last = '2000-01-01'; const d3 = g.dailyStatus(); if (d3.day !== 0 || d
 const off = g.offlineEarnings(10 * 3600 * 1000);
 if (!(off.amount > 0) || !off.capped) fail('offline earnings should be positive and capped');
 
-// prestige: floors, seats, décor and furniture move along; Book Collection levels and coins reset
+// moving: everything comes along (levels too); only the land's price is paid
 const before = g.s.quills;
 g.s.cheese += 100; g.buyFurniture('persian', 0);
-g.s.branchStart = 0; // the bot played 4h; skip the moving-van rest
-const builtBefore = g.builtCount(); const seatsBefore = g.s.rooms[0].seats; const decorBefore = g.s.rooms[0].decor.join();
-if (g.canPrestige()) {
-  const res = g.prestige();
-  const ok = res && res.gained >= 1 && g.s.quills === before + res.gained && g.builtCount() >= builtBefore && g.s.rooms[0].seats === seatsBefore
-    && g.s.rooms[0].decor.join() === decorBefore && g.s.rooms.every((r) => r.lvl === 1) && g.s.coins === 0 && g.floorFurniture(0).rug === 'persian' && !g.canPrestige();
-  if (!ok) fail('prestige'); else console.log(`prestige ok: +${res.gained} quills, ${res.floors} floors moved to "${g.branch().name}"`);
-} else console.log('prestige not yet available after 4h of bot play (pending quills:', g.pendingQuills(), ')');
+g.s.coins += g.moveCost() * 1.5;
+for (let i = g.nextFloor(); i >= 0; i = g.nextFloor()) { g.s.coins += ROOMS[i].unlock; g.startBuild(i); g.finishBuildNow(i); }
+const builtBefore = g.builtCount(); const lvls = g.s.rooms.map((r) => r.lvl).join(); const decorBefore = g.s.rooms[0].decor.join(); const wingsBefore = WINGS.map((w) => g.wing(w.id).lvl).join();
+const coinsBefore = g.s.coins; const cost = g.moveCost();
+if (!g.canBuyLand()) fail(`should be able to buy land: ${g.landBlocker()}`);
+g.buyLand();
+if (Math.abs(g.s.coins - (coinsBefore - cost)) > 1) fail('land should cost exactly its price');
+if (g.moveReady()) fail('movers should need time');
+g.s.move.end = Date.now() - 1;
+const res = g.prestige();
+const ok = res && res.gained >= 1 && g.s.quills === before + res.gained && g.builtCount() >= builtBefore && g.s.rooms.map((r) => r.lvl).join() === lvls
+  && g.s.rooms[0].decor.join() === decorBefore && WINGS.map((w) => g.wing(w.id).lvl).join() === wingsBefore && g.floorFurniture(0).rug === 'persian' && !g.moveReady() && g.floorCap() >= builtBefore;
+if (!ok) fail('moving'); else console.log(`moving ok: +${res.gained} quills, ${res.floors} floors and every level moved to "${g.branch().name}" (${g.floorCap()} floors, ${g.plotsOpen()} wing plots)`);
 if (!process.exitCode) console.log('SMOKE OK');

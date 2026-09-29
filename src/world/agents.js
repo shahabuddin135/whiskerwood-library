@@ -4,6 +4,7 @@ import { SEAT_H } from './roomArt.js';
 import { drawMouse, ell, circ, fillRR, star } from './draw.js';
 import { FURS, CLOTH, HATS } from '../data/visitors.js';
 import { readTime, spawnInterval } from '../core/economy.js';
+import { glow } from './glow.js';
 
 const WALK = 46;
 let seedCounter = 1;
@@ -297,9 +298,7 @@ export class RoomSim {
     // golden halo so guests are easy to spot
     const pulse = 0.5 + 0.5 * Math.sin(t * 4);
     const hy = (type === 'author' && v.state === 'pose' ? L.laneBack - 13 : v.y) - 18;
-    const g = ctx.createRadialGradient(v.x, hy, 2, v.x, hy, 34);
-    g.addColorStop(0, `rgba(255,225,120,${(0.35 + pulse * 0.2) * v.alpha})`); g.addColorStop(1, 'rgba(255,225,120,0)');
-    ctx.fillStyle = g; ctx.fillRect(v.x - 34, hy - 34, 68, 68);
+    glow(ctx, v.x, hy, 34, '255,225,120', (0.35 + pulse * 0.2) * v.alpha);
     if (!v.greeted && v.alpha > 0.5) {
       const by = hy - 38 + Math.sin(t * 3) * 2.5;
       ell(ctx, v.x, by, 11, 11, 'rgba(255,255,255,0.95)');

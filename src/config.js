@@ -5,6 +5,10 @@ export const CONFIG = {
   // Turn on once real in-app purchases are wired (see src/iap.js). Hidden until then so the
   // store build never shows buttons that don't work.
   iapEnabled: false,
+  // Developer tools for testing: a one-time gift of cheese and coins, and a 🛠️ Developer section in
+  // Settings (more cheese/coins, finish every timer, instant ads). A "DEV" tag shows on the settings
+  // button while this is on. ⚠️ Set to false before building the version you upload to Google Play.
+  devTools: true,
   // Host docs/privacy-policy.html (e.g. GitHub Pages) and put the public URL here + in the Play Console.
   privacyUrl: 'https://YOUR-USERNAME.github.io/whiskerwood-library/privacy-policy.html',
 

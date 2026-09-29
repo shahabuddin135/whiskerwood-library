@@ -21,7 +21,7 @@ export const SCRIPTED = [
 ];
 
 // Endless generated quests once the script runs out.
-const CYCLE = ['level', 'built', 'seats', 'requests', 'level', 'decor', 'specials', 'staff', 'cats', 'level', 'books', 'shelves', 'parcels', 'built', 'fish'];
+const CYCLE = ['level', 'built', 'digs', 'seats', 'requests', 'wing', 'mole', 'level', 'decor', 'specials', 'scones', 'staff', 'cats', 'digs', 'mole', 'books', 'shelves', 'wing', 'parcels', 'built', 'fish'];
 
 // H: helpers from the Game that pick sensible (affordable-soon) targets:
 //   H.level() -> { i, target } | null, H.cheapest(track) -> room index | null
@@ -36,9 +36,31 @@ export function generateQuest(n, s, H) {
         break;
       }
       case 'built': {
-        const nx = s.rooms.findIndex((r) => !r.built);
+        const nx = H.nextFloor ? H.nextFloor() : s.rooms.findIndex((r) => !r.built);
         if (nx > 0) return { type, room: nx, target: 1, text: `Build a new floor: ${ROOMS[nx].name}`, reward: { cheese: 6 + nx * 2, coinsSec: 300 } };
         break;
+      }
+      case 'digs': {
+        if (!s.deep?.open || s.deep.tales) break;
+        const n2 = Math.min(1 + Math.min(2, Math.floor(n / 20)), H.digsLeft ? H.digsLeft() : 3);
+        if (n2 < 1) break;
+        return { type, target: n2, text: `Dig ${n2 === 1 ? 'a tunnel' : `${n2} tunnels`} in the Deep Stacks`, reward: { cheese: 3 + n2, coinsSec: 120 * tier } };
+      }
+      case 'wing': {
+        const b = H.wingToBuild?.();
+        if (b) return { type: 'wingBuilt', wing: b.id, target: 1, text: `Build ${b.name} next door`, reward: { cheese: 6, coinsSec: 300 } };
+        const w = H.wing?.();
+        if (w) return { type: 'wingLvl', wing: w.id, target: w.target, text: `Upgrade the ${w.short} to Lv ${w.target}`, reward: { coinsSec: 120 * tier, cheese: 3 + tier } };
+        break;
+      }
+      case 'mole': {
+        const m = H.mole?.();
+        if (m) { const { lvl, ...q } = m; void lvl; return { ...q, target: q.target ?? 1, reward: { cheese: 4 + Math.min(4, tier), coinsSec: 150 * tier } }; }
+        break;
+      }
+      case 'scones': {
+        if (!s.wings?.cafe?.built) break;
+        return { type, target: 2, text: 'Serve 2 trays of scones at the café', reward: { cheese: 3, coinsSec: 90 * tier } };
       }
       case 'seats': {
         const i = H.cheapest('seats');
@@ -65,7 +87,7 @@ export function generateQuest(n, s, H) {
       case 'cats': return { type, target: 1, text: 'Shoo Baroness Clawdia away from a window', reward: { cheese: 4, coinsSec: 90 * tier } };
       case 'fish': return { type, target: 2, text: 'Catch 2 fish at the pond (tap when the float bobs)', reward: { cheese: 2, coinsSec: 60 * tier } };
       case 'parcels': return { type, target: 1, text: 'Catch a pigeon parcel', reward: { cheese: 3, coinsSec: 60 * tier } };
-      case 'books': return { type, target: null, text: 'Collect a new book for your album', reward: { cheese: 5 } };
+      case 'books': if (H.booksLeft && H.booksLeft() <= 0) break; return { type, target: null, text: 'Collect a new book for your album', reward: { cheese: 5 } };
       default: break;
     }
   }

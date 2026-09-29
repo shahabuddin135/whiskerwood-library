@@ -13,6 +13,11 @@ import { Ads } from '../ads/ads.js';
 import { wipeSave } from '../core/save.js';
 import { floorTop, IX } from '../world/layout.js';
 import { drawMouse } from '../world/draw.js';
+import { SEASONS } from '../world/ambient.js';
+import { WING, WINGS, WING_W, STOREY_H } from '../data/wings.js';
+import { HALLS, cellY, cellX, CELL_W, DEEP_ROWS } from '../data/deep.js';
+import { BIZ_BY_ID } from '../data/mole.js';
+import { wingX, wingHeight } from '../world/wingArt.js';
 
 export class UI {
   constructor(game, world) {
@@ -28,9 +33,15 @@ export class UI {
     this.seenBooks = E.booksOwned(game.s);
     this.jarFullNotified = false;
     this.thief = null;
-    this.seasonChip = h('<div class="season-chip"></div>');
+    this.seasonChip = h('<button class="season-chip"><span class="sc-line"></span><span class="sc-fest"></span><i class="sc-bar"><b></b></i></button>');
     document.body.appendChild(this.seasonChip);
-    this.seasonChip.addEventListener('click', () => { if (this.game.festival()) { sfx.open(); this.screens.festival(); } });
+    this.seasonChip.addEventListener('click', () => {
+      if (this.game.festival()) { sfx.open(); this.screens.festival(); return; }
+      sfx.tap();
+      const cal = this.game.calendar(); const w = this.world;
+      const next = SEASONS[(cal.idx + 1) % 4];
+      toast(`${w.season.icon} ${w.season.name}, Mouse Year ${cal.year} · ${next.icon} ${next.name} in ${fmtTime(cal.left)}`);
+    });
     this.bind();
     this.listen();
     this.applySettings();
@@ -61,10 +72,13 @@ export class UI {
     on('#dailyBtn', () => { sfx.open(); this.screens.daily(); });
     on('#albumBtn', () => { sfx.open(); this.seenBooks = E.booksOwned(this.game.s); this.screens.album(this.world.focusedRoom()); this.refreshBadges(); });
     on('#floorsBtn', () => { sfx.open(); this.screens.floors(); });
+    on('#deepBtn', () => { sfx.open(); this.screens.deep(); });
+    on('#edgeL', () => this.edgeTap(-1));
+    on('#edgeR', () => this.edgeTap(1));
     on('#topBtn', () => {
       sfx.tap();
       const c = this.game.constructing();
-      if (c >= 0) { this.world.panToRoom(c); this.screens.construction(c); } else this.world.panToTop();
+      if (c >= 0) { this.world.panToRoom(c); this.screens.construction(c); } else if (this.game.siteFull() || this.game.s.move.end) this.screens.move(); else this.world.panToTop();
     });
     on('#settingsBtn', () => { sfx.open(); this.screens.settings(); });
     on('#cheesePill', () => { sfx.open(); this.screens.shop(); });
@@ -102,6 +116,13 @@ export class UI {
       this.world.fx.text(IX + 176, floorTop(i) + 70, '×2 INCOME!', { color: '#ffd257', size: 18, life: 1.8 });
     });
     g.on('book', (res) => { if (res.source === 'milestone') this.bookCard(res); this.refreshBadges(); });
+    g.on('mouseYear', ({ year }) => {
+      g.addCheese(2);
+      sfx.fanfare();
+      bigText(`Mouse Year ${year}!`);
+      toast(`🎉 Happy Mouse New Year! Year ${year} begins — here's 2 golden cheese.`, 'gold');
+      this.world.fx.confetti(IX + 176, this.world.cam.y + this.world.viewH() * 0.4, 50);
+    });
     g.on('rep', ({ level, cheese }) => {
       sfx.levelUp();
       toast(`⭐ Reputation Lv ${level}! +${cheese} golden cheese`, 'gold');
@@ -109,6 +130,50 @@ export class UI {
       $('#repBtn').animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35)' }, { transform: 'scale(1)' }], 500);
     });
     g.on('buy', ({ i, track }) => this.world.chatter.react(i, track.startsWith('decor') ? 'decor' : track));
+    // wings
+    g.on('wingStart', ({ id }) => { toast(`🔨 Building ${WING[id].name}…`); });
+    g.on('wingBuilt', ({ id }) => {
+      const w = WING[id];
+      sfx.fanfare(); haptic('heavy'); bigText('Grand Opening!');
+      this.world.fx.confetti(wingX(w) + WING_W / 2, -STOREY_H - 20, 50, 180);
+      this.world.cache.delete('wing:' + id);
+      toast(`🎉 ${w.name} is open! Every level adds income to the whole library.`, 'gold');
+    });
+    g.on('clubDone', ({ cheese }) => { toast(`🎶 What a club night! Everyone had a lovely time. +${cheese} golden cheese`, 'gold'); });
+    // the Deep Stacks
+    g.on('deepOpen', () => { this.world.deep.clear(); });
+    g.on('deepJob', () => { this.world.deep.clear(); this.refreshBadges(); });
+    g.on('deepDone', (j) => {
+      this.world.deep.clear();
+      const x = cellX(j.c) + CELL_W / 2; const y = cellY(j.r) + 50;
+      this.world.fx.sparkle(x, y, 14, '#ffe28a', 40);
+      if (j.kind === 'dig') {
+        const hall = HALLS[this.game.hallAt(j.c, j.r)];
+        if (j.fossil) { sfx.fanfare(); setTimeout(() => this.screens.fossilFound(j.fossil), 300); }
+        else if (j.treasure) { sfx.reward(); toast(`💰 A treasure chest! +${j.treasure.cheese} golden cheese and ${fmt(j.treasure.coins)} coins`, 'gold'); this.world.fx.confetti(x, y, 30, 100); }
+        else if (hall) { sfx.sparkle(); toast(`✨ The crew broke into an old hall: ${hall.name}!`, 'gold'); }
+        else { sfx.collect(false); toast('⛏️ The mole crew dug through!'); }
+      } else if (j.restored) {
+        sfx.fanfare(); haptic('heavy'); bigText('Hall restored!');
+        this.world.fx.confetti(x, y, 40, 140);
+        toast(`✨ ${j.name} is restored! +15% income and a new page for the Chronicle 📜`, 'gold');
+      } else { sfx.buy(); toast(`🔨 ${HALLS[j.hall].steps[j.step]}: done!`); }
+      this.refreshBadges();
+    });
+    g.on('deepDoor', () => { this.world.deep.clear(); });
+    // Mole City
+    g.on('bizOpen', ({ id }) => {
+      const b = BIZ_BY_ID[id]; const st = g.biz(id); const [c, r] = st.cell.split(',').map(Number);
+      sfx.fanfare(); haptic('heavy'); bigText('Grand Opening!');
+      this.world.fx.confetti(cellX(c) + CELL_W / 2, cellY(r) + 40, 40, 120);
+      toast(`🎉 ${b.name} is open! Level it up to bring in more customers.`, 'gold');
+    });
+    g.on('tales', () => { this.world.deep.clear(); });
+    // moving
+    g.on('siteReady', () => {
+      sfx.sparkle();
+      this.banner({ icon: '🚚', title: 'The new site is ready!', text: `${g.nextBranch().name} is all set up. Time to move in!`, btn: 'Move in', ms: 9000, onClick: () => this.screens.move() });
+    });
     g.on('questReady', () => { sfx.sparkle(); haptic('light'); });
     g.on('jarFull', (full) => {
       if (full && !this.jarFullNotified) { this.jarFullNotified = true; toast('🫙 The coin jar is full — tap it to collect!'); }
@@ -175,6 +240,12 @@ export class UI {
       cats: 'When Baroness Clawdia peeks in a window, tap her until she runs!',
       fish: 'Scroll down to the pond and tap the fishing mouse when the float bobs 🐟',
     };
+    if (q.type === 'digs') { this.panToDeep(); toast('⛏️ Tap a glowing “Dig here” spot underground!'); return; }
+    if (q.type === 'liftStops') { this.screens.lift(); return; }
+    if (q.type === 'bizBuilt') { this.panToDeep(); toast(`🏪 Tap an empty tunnel with a TO LET sign to open ${BIZ_BY_ID[q.biz]?.short || 'a shop'} there!`); return; }
+    if (q.type === 'bizLvl') { const st = g.biz(q.biz); if (st) { const [c, r] = st.cell.split(',').map(Number); this.panToCell(c, r); } this.screens.biz(q.biz); return; }
+    if (q.type === 'wingLvl' || q.type === 'wingBuilt') { this.panToWing(q.wing); setTimeout(() => this.screens.wing(q.wing), 300); return; }
+    if (q.type === 'scones') { this.panToWing('cafe'); toast('🧁 Tap the café when a tray of scones is ready!'); return; }
     if (q.room != null && g.s.rooms[q.room]?.built && ['level', 'seats', 'shelves', 'staff', 'decor'].includes(q.type)) this.openRoom(q.room);
     else if (q.type === 'built') this.world.panToTop();
     else if (q.type === 'spins') this.screens.wheel();
@@ -200,6 +271,87 @@ export class UI {
       }, 500);
     }
     this.renderTasks();
+  }
+
+  /* ---------- wings & the Deep Stacks ---------- */
+  wingTap(id, kind) {
+    const g = this.game; const w = WING[id];
+    if (kind === 'gazette') { sfx.open(); this.screens.gazette(); return; }
+    if (kind === 'bubble') {
+      const res = g.doWingAction(id);
+      if (!res) { sfx.tap(); this.screens.wing(id); return; }
+      const x = wingX(w) + WING_W / 2; const y = -wingHeight(g.wing(id)) - 60;
+      if (res.kind === 'coins') {
+        sfx.collect(false); haptic('light');
+        this.world.fx.text(x, y, '+' + fmt(res.amount), { icon: 'coin', size: 12 });
+        this.flyCoins(centerOf($('#jarBtn')), 8);
+        toast(id === 'cafe' ? `🧁 Scones for everyone! +${fmt(res.amount)} coins` : `🎟️ What a tour! +${fmt(res.amount)} coins`, 'gold');
+      } else if (res.kind === 'club') {
+        sfx.fanfare(); bigText(`${res.club.icon} ${res.club.name}!`);
+        toast(`${res.club.icon} ${res.club.line} Income ×1.5 while it lasts!`, 'gold');
+      } else if (res.kind === 'started') { sfx.hammer(); toast('🖨️ Clank, whirr, thump! The presses are rolling.'); }
+      else if (res.kind === 'book') { this.screens.bookReveal(res); }
+      return;
+    }
+    sfx.open();
+    this.screens.wing(id);
+  }
+  deepTap(c, r) { sfx.tap(); this.screens.deepCell(c, r); }
+  liftTap() {
+    sfx.open();
+    if (this.game.moleCityOpen()) this.screens.lift(); else this.screens.deep();
+  }
+  panToCell(c, r) { this.world.panTo(cellY(r) + 66, true, cellX(c) + CELL_W / 2); }
+  panToWing(id) {
+    const w = WING[id]; const st = this.game.wing(id);
+    this.world.panTo(-(st.built ? wingHeight(st) : STOREY_H) / 2 - 20, true, wingX(w) + WING_W / 2);
+  }
+  // Show where the crew can work next (the deepest spot), or the dragon's hoard.
+  panToDeep(hoard = false) {
+    const g = this.game; const d = g.s.deep;
+    let best = [4, 0];
+    if (hoard) best = [4, DEEP_ROWS - 1];
+    else {
+      for (const j of d.jobs) if (j.r >= best[1]) best = [j.c, j.r];
+      for (let r = 0; r < DEEP_ROWS; r++) for (let c = 0; c < 9; c++) if (['dig', 'restore', 'door'].includes(g.cellAction(c, r)) && r >= best[1]) best = [c, r];
+    }
+    this.world.panTo(cellY(best[1]) + 66, true, cellX(best[0]) + CELL_W / 2);
+  }
+  // Little arrows at the screen edges pointing at wings you can't see.
+  updateEdges() {
+    const w = this.world; const g = this.game;
+    const L = $('#edgeL'); const R = $('#edgeR');
+    const mid = w.cam.y + w.viewH() / 2;
+    const ground = mid > -520 && mid < 60 && !this.sheet.isOpen && !modalOpen() && !this.story.open && g.s.questIdx >= 6;
+    const left = w.cam.x; const right = w.cam.x + w.viewW();
+    const find = (dir) => {
+      let best = null;
+      for (const wd of WINGS) {
+        const st = g.wing(wd.id); if (!st.built && !st.buildEnd && !g.wingOpen(wd.id)) continue;
+        const cx = wingX(wd) + WING_W / 2;
+        if (dir < 0 ? cx < left : cx > right) { const dist = dir < 0 ? left - cx : cx - right; if (!best || dist < best.dist) best = { wd, dist }; }
+      }
+      if (!best && dir < 0 && left > 120) best = { tower: true };
+      if (!best && dir > 0 && right < 320) best = { tower: true };
+      return best;
+    };
+    const set = (el, info, dir) => {
+      if (!ground || !info) { el.classList.remove('show'); return; }
+      const ready = info.wd && ['ready', 'done'].includes(g.wingActionState(info.wd.id));
+      const label = info.tower ? '🏛️ Library' : `${info.wd.icon} ${info.wd.short}${ready ? ' ✨' : ''}`;
+      const html = dir < 0 ? `‹ ${label}` : `${label} ›`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+      el.dataset.target = info.tower ? 'tower' : info.wd.id;
+      el.classList.toggle('ready', !!ready);
+      el.classList.add('show');
+    };
+    set(L, find(-1), -1); set(R, find(1), 1);
+  }
+  edgeTap(dir) {
+    sfx.tap();
+    const t = (dir < 0 ? $('#edgeL') : $('#edgeR')).dataset.target;
+    if (t === 'tower') this.world.panTo(this.world.cam.y + this.world.viewH() / 2 - 40, true, 220);
+    else if (t) this.panToWing(t);
   }
 
   openRoom(i) { closeModal(); this.sheet.open(i); }
@@ -280,7 +432,8 @@ export class UI {
     const y = window.innerHeight - 78 - 70 - (parseFloat(getComputedStyle(document.body).getPropertyValue('--safe-bottom')) || 0);
     this.thief = { x: -80, y, tx: jar.x - 70, t: 0, dur: first ? 14 : 7, state: 'run' };
     $('#thief').classList.add('show');
-    this.banner({ icon: '🦹', title: 'Stop, thief!', text: 'Sneaky Rattigan is running for your coin jar — tap him!', btn: 'OK', ms: 5000, urgent: true });
+    const who = g.hallsDone() >= 5 ? 'Rattigan’s cousin Ratsby' : 'Sneaky Rattigan';
+    this.banner({ icon: '🦹', title: 'Stop, thief!', text: `${who} is running for your coin jar — tap!`, btn: 'OK', ms: 5000, urgent: true });
     sfx.whistle();
     return true;
   }
@@ -326,7 +479,7 @@ export class UI {
     const dir = th.state === 'stole' ? -1 : 1;
     const hop = th.state === 'caught' ? -Math.sin(Math.min(1, th.t2 / 0.7) * Math.PI) * 14 : 0;
     ctx.globalAlpha = th.state === 'caught' ? Math.max(0, 1 - th.t2 / 0.7) : 1;
-    drawMouse(ctx, 40, 74 + hop, { fur: '#6f6560', belly: '#c9beb6', hat: 'bandit', pose: th.state === 'caught' ? 'happy' : 'walk', t: th.t * 1.6, dir, sack: th.state !== 'caught', s: 1.45 });
+    drawMouse(ctx, 40, 74 + hop, { fur: '#6f6560', belly: '#c9beb6', hat: 'bandit', pose: th.state === 'caught' ? 'happy' : 'walk', t: th.t * 1.6, dir, sack: th.state !== 'caught', s: 1.45, full: true });
     if (th.state === 'run') { ctx.fillStyle = '#fff'; ctx.font = '700 9px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('TAP!', 40, 10 + Math.sin(th.t * 10) * 2); }
   }
   endThief() { this.thief = null; $('#thief').classList.remove('show'); }
@@ -338,9 +491,8 @@ export class UI {
     if (!res) return;
     this.world.resetForBranch();
     sfx.fanfare(); haptic('heavy');
-    bigText(`+${res.gained} Golden Quills!`);
+    bigText(`Welcome to ${res.to.name}!`);
     setTimeout(() => this.screens.arrival(res), 900);
-    this.shownCoins = 0;
     g.save();
     this.native?.askReview?.('prestige');
     this.refresh();
@@ -352,7 +504,11 @@ export class UI {
     location.reload();
   }
 
-  onStoryDone() { this.refresh(); }
+  onStoryDone(id) {
+    this.refresh();
+    if (id === 'deepEnd') setTimeout(() => this.screens.talesReward(), 400);
+    if (id === 'deep0') setTimeout(() => this.panToDeep(), 300);
+  }
 
   /* ---------- per-frame refresh ---------- */
   frame(dt) {
@@ -405,8 +561,14 @@ export class UI {
     const season = this.world.season; const wx = this.world.ambient.weather;
     const weatherIcon = wx.kind === 'rain' ? ' 🌧️' : wx.kind === 'snow' ? ' 🌨️' : wx.kind === 'cloudy' ? ' ☁️' : wx.rainbow > 0 ? ' 🌈' : '';
     const fest = g.festival();
-    const chip = `${fest ? `${fest.icon} ${fest.name} · ` : ''}${season.icon} ${season.name}${weatherIcon}`;
-    if (this.seasonChip.textContent !== chip) this.seasonChip.textContent = chip;
+    const cal = this.world.cal || g.calendar();
+    const line = `${season.icon} ${season.name} · Year ${cal.year}${weatherIcon}`;
+    const sc = this.seasonChip;
+    if (sc.querySelector('.sc-line').textContent !== line) sc.querySelector('.sc-line').textContent = line;
+    const festLine = fest ? `${fest.icon} ${fest.name}` : '';
+    if (sc.querySelector('.sc-fest').textContent !== festLine) sc.querySelector('.sc-fest').textContent = festLine;
+    sc.querySelector('.sc-bar b').style.width = `${Math.round(cal.progress * 100)}%`;
+    sc.dataset.season = season.key;
     this.seasonChip.classList.toggle('fest', !!fest);
     this.seasonChip.classList.toggle('has-gift', g.festGiftReady());
     // mystery gift on the doorstep
@@ -420,6 +582,7 @@ export class UI {
     this.refreshBadges();
     this.story.tick();
     this.updatePointer();
+    this.updateEdges();
   }
 
   renderTasks() {
@@ -456,14 +619,20 @@ export class UI {
     const set = (id, on) => $(id).classList.toggle('has-dot', !!on);
     set('#dailyBtn', g.dailyStatus().canClaim);
     set('#navWheel', g.wheelStatus().free);
-    set('#navBranch', g.canPrestige());
+    set('#navBranch', g.canBuyLand() || g.moveReady());
+    const d = s.deep;
+    $('#deepBtn').classList.toggle('hidden', !d.open);
+    if (d.open) set('#deepBtn', g.freeCrews() > 0 && !d.tales);
     const owned = E.booksOwned(s);
     set('#albumBtn', owned > this.seenBooks);
     $('#albumBtn small').textContent = `${owned}/${BOOKS.length}`;
     const next = g.nextFloor();
-    set('#topBtn', next > 0 && g.constructing() < 0 && s.coins >= ROOMS[next].unlock);
-    $('#topBtn').classList.toggle('hidden', next < 0 && g.constructing() < 0);
-    $('#topBtn small').textContent = g.constructing() >= 0 ? 'Building' : 'Build';
+    const full = (g.siteFull() || !!s.move.end) && next < 0 && g.constructing() < 0;
+    set('#topBtn', (next > 0 && g.constructing() < 0 && s.coins >= ROOMS[next].unlock) || (full && (g.canBuyLand() || g.moveReady())));
+    $('#topBtn').classList.toggle('hidden', next < 0 && g.constructing() < 0 && !full);
+    $('#topBtn small').textContent = g.constructing() >= 0 ? 'Building' : full ? 'Move' : 'Build';
+    const ico = full ? '🚚' : '🎈';
+    if ($('#topBtn .rb-ico').textContent !== ico) $('#topBtn .rb-ico').textContent = ico;
     const f = this.world.focusedRoom();
     const cheap = ['lvl', 'seats', 'shelves', 'staff'].some((t) => g.cost(f, t) <= s.coins * 0.5);
     set('#navUpgrade', cheap && !this.sheet.isOpen);

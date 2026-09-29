@@ -32,11 +32,11 @@ export function drawFoundation(ctx, scene, tint, winter) {
 }
 
 // Little grass tufts and pebbles all over the lawn (a bit of texture).
-export function drawLawnDetail(ctx, scene, season, tint, L, R) {
+export function drawLawnDetail(ctx, scene, season, tint, L, R, density = 1) {
   if (scene === 'cove' || season.key === 'winter') return;
   const Rn = rng(61);
   ctx.strokeStyle = tint(season.key === 'autumn' ? '#9a8a3a' : '#5f9a4a'); ctx.lineWidth = 0.7;
-  for (let k = 0; k < 70; k++) {
+  for (let k = 0; k < 70 * density; k++) {
     const x = L + Rn() * (R - L); const y = 10 + Rn() * 76;
     if (x > 16 && x < 178 && y > 22 && y < 78) continue; // pond
     if (x > 186 && x < 254) continue; // path

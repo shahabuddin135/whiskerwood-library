@@ -2,18 +2,38 @@
 import { W, BX0, BX1, FH, floorTop } from './layout.js';
 import { ell, circ, rng, star, drawMouse, fillRR, shade } from './draw.js';
 import { FURS, CLOTH } from '../data/visitors.js';
+import { texFill } from './textures.js';
+import { glow } from './glow.js';
+import { WINGS } from '../data/wings.js';
+import { wingX, SIDE } from './wingArt.js';
 import { sfx } from '../audio/sfx.js';
 
-export const SEASON_SEC = 24 * 60; // each season lasts two in-game days (24 real minutes)
 export const SEASONS = [
   { key: 'spring', name: 'Spring', icon: '🌸', grass: ['#a3d582', '#7fbb66'], hills: ['#bfe0b4', '#97cd86'], trees: ['#f5b8cb', '#f9d0dc', '#9ccf7a'], flowers: ['#f7a8c4', '#fff3b0', '#ffffff', '#c8a8f0', '#ffb3c7'] },
   { key: 'summer', name: 'Summer', icon: '☀️', grass: ['#8cc56f', '#6ea85a'], hills: ['#a9d3b0', '#86c07a'], trees: ['#5d9450', '#6ea35a', '#4f8a44'], flowers: ['#ffd24a', '#ff8a5c', '#ffffff', '#f7a8c4', '#c8a8f0'] },
   { key: 'autumn', name: 'Autumn', icon: '🍂', grass: ['#bfc06c', '#9f9f50'], hills: ['#e0c98f', '#cfa95e'], trees: ['#e8913a', '#d9632d', '#f2c14e'], flowers: ['#e8913a', '#d9632d', '#f2c14e', '#b5523b', '#fff3b0'] },
   { key: 'winter', name: 'Winter', icon: '❄️', grass: ['#f4f8fc', '#dde6ef'], hills: ['#eef3f9', '#d9e2ec'], trees: ['#f1f5f9', '#d5dee8', '#c3cfdb'], flowers: [], bare: true },
 ];
-export function seasonAt(nowSec, override = null) {
+// Season for a Mouse Calendar reading (see core/calendar.js). In the last moments of a season
+// the landscape colours fade into the next one, so the change feels natural rather than a jump.
+export function seasonFor(cal, override = null) {
   if (override != null) return SEASONS[override % 4];
-  return SEASONS[Math.floor(nowSec / SEASON_SEC) % 4];
+  const cur = SEASONS[cal.idx];
+  const blendSec = Math.min(20, cal.seasonSec * 0.12);
+  if (cal.left >= blendSec) return cur;
+  return blendSeason(cur, SEASONS[(cal.idx + 1) % 4], 1 - cal.left / blendSec);
+}
+
+function blendSeason(a, b, f) {
+  const arr = (x, y) => (x.length === y.length ? x.map((c, k) => mixHex(c, y[k], f)) : f < 0.5 ? x : y);
+  return { ...a, grass: arr(a.grass, b.grass), hills: arr(a.hills, b.hills), trees: arr(a.trees, b.trees), flowers: arr(a.flowers, b.flowers), blend: f };
+}
+
+function mixHex(a, b, f) {
+  const p = (h) => parseInt(h.slice(1), 16);
+  const x = p(a), y = p(b);
+  const ch = (s) => Math.round(((x >> s) & 255) + (((y >> s) & 255) - ((x >> s) & 255)) * f);
+  return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0');
 }
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -26,13 +46,13 @@ export class Ambient {
     this.weather = { kind: 'clear', left: rand(50, 90), intensity: 0, rainbow: 0 };
     this.rain = Array.from({ length: 110 }, () => ({ x: Math.random(), y: Math.random(), s: rand(0.8, 1.2), l: rand(8, 14) }));
     this.flakes = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random(), r: rand(1, 2.6), p: Math.random() * 6, s: rand(0.5, 1) }));
-    this.drift = Array.from({ length: 16 }, () => ({ x: Math.random(), y: Math.random(), r: rand(0, 6), vr: rand(-2, 2), s: rand(0.6, 1.1), p: Math.random() * 6 }));
+    this.drift = Array.from({ length: 10 }, () => ({ x: Math.random(), y: Math.random(), r: rand(0, 6), vr: rand(-2, 2), s: rand(0.6, 1.1), p: Math.random() * 6 }));
     this.birds = [];
-    this.nextBirds = rand(8, 20);
+    this.nextBirds = rand(20, 40);
     this.stars = [];
     this.nextStar = rand(15, 30);
     this.balloon = null;
-    this.nextBalloon = rand(120, 200);
+    this.nextBalloon = rand(240, 360);
     this.walkers = [];
     this.nextWalker = 1;
     this.cyclist = null;
@@ -41,7 +61,7 @@ export class Ambient {
     this.frogs = [{ pad: 0, x: 70, y: 56, jump: null, next: rand(4, 10) }, { pad: 1, x: 140, y: 58, jump: null, next: rand(6, 12) }];
     this.ducks = { x: 60, dir: 1 };
     this.skater = { t: 0 };
-    this.flies = Array.from({ length: 4 }, (_, k) => ({ x: 40 + k * 90, y: 30, p: Math.random() * 6, col: ['#ffd24a', '#9ec5f0', '#f7a8c4', '#ffffff'][k] }));
+    this.flies = Array.from({ length: 3 }, (_, k) => ({ x: 60 + k * 120, y: 30, p: Math.random() * 6, col: ['#ffd24a', '#f7a8c4', '#ffffff'][k] }));
   }
 
   get wet() { return (this.weather.kind === 'rain' || this.weather.kind === 'snow') && this.weather.intensity > 0.5; }
@@ -67,9 +87,9 @@ export class Ambient {
     // birds by day, shooting stars by night
     this.nextBirds -= dt;
     if (this.nextBirds <= 0 && tod.dark < 0.3 && wx.kind !== 'rain') {
-      this.nextBirds = rand(18, 40);
+      this.nextBirds = rand(45, 90);
       const dir = Math.random() < 0.5 ? 1 : -1;
-      this.birds.push({ x: dir > 0 ? -60 : this.w.Wpx + 60, y: rand(0.12, 0.4) * this.w.Hpx, vx: dir * rand(28, 45), n: 3 + Math.floor(Math.random() * 5), dir });
+      if (!this.birds.length) this.birds.push({ x: dir > 0 ? -60 : this.w.Wpx + 60, y: rand(0.12, 0.34) * this.w.Hpx, vx: dir * rand(28, 40), n: 2 + Math.floor(Math.random() * 3), dir });
       if (Math.random() < 0.5) sfx.bird();
     }
     this.birds = this.birds.filter((b) => { b.x += b.vx * dt; return b.x > -120 && b.x < this.w.Wpx + 120; });
@@ -82,8 +102,9 @@ export class Ambient {
 
     // hot-air balloon (tap for a gift)
     this.nextBalloon -= dt;
-    if (!this.balloon && this.nextBalloon <= 0 && tod.dark < 0.4 && this.w.game.s.questIdx >= 6) {
-      this.nextBalloon = rand(170, 280);
+    // only one flying visitor at a time: no balloon while the pigeon is out
+    if (!this.balloon && this.nextBalloon <= 0 && tod.dark < 0.4 && this.w.game.s.questIdx >= 6 && !this.w.pigeon) {
+      this.nextBalloon = rand(300, 480);
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.balloon = { x: dir > 0 ? -60 : this.w.Wpx + 60, y: rand(190, 320), vx: dir * rand(14, 20), t: 0, caught: false, cols: pick([['#f28b82', '#ffd24a'], ['#9ec5f0', '#ffffff'], ['#a3d9a5', '#f7c9d6'], ['#d4b3f0', '#ffd24a']]) };
     }
@@ -95,23 +116,29 @@ export class Ambient {
     // garden life
     this.nextWalker -= dt;
     if (this.nextWalker <= 0) {
-      this.nextWalker = rand(3.5, 8);
+      this.nextWalker = rand(4, 9);
+      // where are they going? the library, or one of the wings
+      const g = this.w.game;
+      const doors = [(BX0 + BX1) / 2 - 8, ...WINGS.filter((w) => g.wing(w.id).built).map((w) => wingX(w) + SIDE + 10)];
+      const door = Math.random() < 0.45 ? doors[0] : pick(doors);
       if (this.walkers.length < 5) {
-        const dir = Math.random() < 0.5 ? 1 : -1;
+        const left = this.w.cam.x - 40; const right = this.w.cam.x + this.w.viewW() + 40;
+        const fromLeft = Math.random() < 0.5;
+        const dir = fromLeft ? 1 : -1;
         const f = pick(FURS);
         this.walkers.push({
-          x: dir > 0 ? -30 : W + 30, y: rand(12, 22), dir, t: Math.random() * 5, alpha: 1,
+          x: fromLeft ? Math.min(left, door - 60) : Math.max(right, door + 60), y: rand(12, 22), dir, t: Math.random() * 5, alpha: 1, door,
           look: { ...f, scarf: season.key === 'winter' || Math.random() < 0.4 ? pick(CLOTH) : null, hat: season.key === 'winter' ? 'bobble' : Math.random() < 0.3 ? pick(['beret', 'cap', 'flower', 'bow']) : null, hatCol: pick(CLOTH), book: Math.random() < 0.5 ? pick(CLOTH) : null },
         });
       }
     }
-    const door = (BX0 + BX1) / 2 - 8;
     this.walkers = this.walkers.filter((m) => {
       m.t += dt;
+      const door = m.door ?? (BX0 + BX1) / 2 - 8;
       if (Math.abs(m.x - door) < 3) { m.alpha -= dt * 2.5; return m.alpha > 0; }
       m.x += Math.sign(door - m.x) * 24 * dt;
       m.dir = door > m.x ? 1 : -1;
-      return true;
+      return Math.abs(m.x - door) < 1400;
     });
     this.nextCyclist -= dt;
     if (!this.cyclist && this.nextCyclist <= 0) { this.nextCyclist = rand(45, 90); const dir = Math.random() < 0.5 ? 1 : -1; this.cyclist = { x: dir > 0 ? -60 : W + 60, dir, t: 0 }; }
@@ -200,8 +227,9 @@ export class Ambient {
     const R = rng(seed); const sway = Math.sin(this.t * 0.7 + seed) * 3;
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
     ctx.fillStyle = tint('#6b4a34'); ctx.beginPath(); ctx.moveTo(-10, 0); ctx.quadraticCurveTo(-6, -70, -2, -130); ctx.lineTo(5, -130); ctx.quadraticCurveTo(7, -70, 11, 0); ctx.closePath(); ctx.fill();
+    texFill(ctx, 'bark', 1);
     const cols = season.bare ? ['#9aa37a'] : season.key === 'autumn' ? ['#d9a441', '#e8c465', '#b5943a'] : ['#7fae62', '#8fbe6c', '#6e9e55'];
-    for (let k = 0; k < 9; k++) ell(ctx, -45 + R() * 90 + sway * 0.5, -150 - R() * 50, 22 + R() * 10, 14 + R() * 6, tint(cols[k % cols.length]));
+    for (let k = 0; k < 9; k++) { ell(ctx, -45 + R() * 90 + sway * 0.5, -150 - R() * 50, 22 + R() * 10, 14 + R() * 6, tint(cols[k % cols.length])); texFill(ctx, 'leaves', 1); }
     ctx.lineWidth = 1.3;
     for (let k = -60; k <= 60; k += 5) {
       ctx.strokeStyle = tint(cols[Math.abs(k) % cols.length]);
@@ -215,12 +243,13 @@ export class Ambient {
   drawPine(ctx, x, y, s, season, tint, seed) {
     const sway = Math.sin(this.t * 0.6 + seed) * 1.5;
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
-    ctx.fillStyle = tint('#5b3f2e'); ctx.fillRect(-6, -40, 12, 40);
+    ctx.fillStyle = tint('#5b3f2e'); ctx.beginPath(); ctx.rect(-6, -40, 12, 40); ctx.fill(); texFill(ctx, 'bark', 1);
     const layers = 6;
     for (let k = 0; k < layers; k++) {
       const yb = -30 - k * 32; const w = 58 - k * 8.5;
       ctx.fillStyle = tint(k % 2 ? '#3f7a4f' : '#356b44');
       ctx.beginPath(); ctx.moveTo(-w + sway * (k / layers), yb); ctx.lineTo(sway * (k / layers + 0.2), yb - 48); ctx.lineTo(w + sway * (k / layers), yb); ctx.quadraticCurveTo(sway * 0.5, yb + 8, -w + sway * (k / layers), yb); ctx.fill();
+      texFill(ctx, 'leaves', 0.8);
       if (season.key === 'winter') { ctx.fillStyle = '#f7fafc'; ctx.beginPath(); ctx.moveTo(-w * 0.8, yb - 6); ctx.lineTo(sway * 0.2, yb - 44); ctx.lineTo(w * 0.8, yb - 6); ctx.quadraticCurveTo(0, yb - 14, -w * 0.8, yb - 6); ctx.fill(); }
     }
     ctx.restore();
@@ -229,14 +258,14 @@ export class Ambient {
   drawPoplar(ctx, x, y, s, season, tint, seed) {
     const R = rng(seed); const sway = Math.sin(this.t * 0.8 + seed) * 2;
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
-    ctx.fillStyle = tint('#6b4a34'); ctx.fillRect(-5, -60, 10, 60);
+    ctx.fillStyle = tint('#6b4a34'); ctx.beginPath(); ctx.rect(-5, -60, 10, 60); ctx.fill(); texFill(ctx, 'bark', 1);
     if (season.bare) {
       ctx.strokeStyle = tint('#6b4a34'); ctx.lineWidth = 2; for (let k = 0; k < 8; k++) { const yy = -60 - k * 22; ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo((k % 2 ? 1 : -1) * (14 - k) + sway, yy - 18); ctx.stroke(); }
       ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -60); ctx.lineTo(sway, -240); ctx.stroke();
     } else {
       const cols = season.key === 'autumn' ? ['#e8c465', '#d9a441', '#f2d27a'] : season.key === 'spring' ? ['#9ccf7a', '#b6dd8a', '#8fc26a'] : ['#5d9450', '#6ea35a', '#4f8a44'];
-      ell(ctx, sway * 0.5, -150, 26, 98, tint(cols[0]));
-      for (let k = 0; k < 12; k++) ell(ctx, (R() - 0.5) * 30 + sway * (0.4 + R() * 0.4), -80 - R() * 150, 10 + R() * 6, 16 + R() * 10, tint(cols[k % cols.length]));
+      ell(ctx, sway * 0.5, -150, 26, 98, tint(cols[0])); texFill(ctx, 'leaves', 1);
+      for (let k = 0; k < 12; k++) { ell(ctx, (R() - 0.5) * 30 + sway * (0.4 + R() * 0.4), -80 - R() * 150, 10 + R() * 6, 16 + R() * 10, tint(cols[k % cols.length])); texFill(ctx, 'leaves', 1); }
     }
     ctx.restore();
   }
@@ -247,6 +276,7 @@ export class Ambient {
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
     ctx.fillStyle = tint('#6b4a34');
     ctx.beginPath(); ctx.moveTo(-9, 0); ctx.quadraticCurveTo(-6, -80, -3, -150); ctx.lineTo(4, -150); ctx.quadraticCurveTo(6, -80, 10, 0); ctx.closePath(); ctx.fill();
+    texFill(ctx, 'bark', 1);
     ctx.strokeStyle = tint('#6b4a34'); ctx.lineWidth = 5; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0, -110); ctx.quadraticCurveTo(-26, -140, -40 + sway, -170); ctx.moveTo(1, -125); ctx.quadraticCurveTo(26, -150, 36 + sway, -185); ctx.stroke();
     if (season.bare) {
@@ -256,7 +286,10 @@ export class Ambient {
       const cols = season.trees;
       for (let k = 0; k < 16; k++) {
         const cx = -55 + R() * 110 + sway * (0.6 + R() * 0.4); const cy = -150 - R() * 95;
-        ell(ctx, cx, cy, 20 + R() * 14, 17 + R() * 10, tint(cols[k % cols.length]));
+        const rx = 20 + R() * 14; const ry = 17 + R() * 10;
+        ell(ctx, cx, cy, rx, ry, tint(cols[k % cols.length]));
+        texFill(ctx, 'leaves', 1);
+        ell(ctx, cx - rx * 0.25, cy - ry * 0.3, rx * 0.5, ry * 0.4, 'rgba(255,255,230,0.10)');
       }
       if (season.key === 'spring') for (let k = 0; k < 18; k++) circ(ctx, -50 + R() * 100 + sway, -150 - R() * 90, 1.8, tint('#ffffff'));
       if (season.key === 'summer') for (let k = 0; k < 6; k++) circ(ctx, -45 + R() * 90 + sway, -140 - R() * 80, 2.6, tint('#e0404f'));
@@ -349,31 +382,34 @@ export class Ambient {
   drawExterior(ctx, v, tod, season, topIndex, builtCount) {
     const t = this.t;
     const leaf = season.key === 'autumn' ? ['#d9632d', '#e8913a', '#b5523b'] : season.key === 'winter' ? ['#8a6a4c'] : season.key === 'spring' ? ['#7fc063', '#9ccf7a', '#f5b8cb'] : ['#4f8a44', '#5e9c55', '#6ea35a'];
-    const ivyTop = floorTop(Math.max(0, builtCount - 1)) + 60;
-    [[BX0 + 3, 11], [BX1 - 3, 29]].forEach(([x, seed]) => {
-      const R = rng(seed);
+    const ivyTop = Math.max(floorTop(Math.max(0, builtCount - 1)) + 60, v.top - 20);
+    const ivyBot = Math.min(0, v.bottom + 20);
+    if (ivyBot > ivyTop) [[BX0 + 3, 11], [BX1 - 3, 29]].forEach(([x, seed]) => {
       ctx.strokeStyle = mixDark('#5b7f4d', tod.dark); ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(x, 0);
-      for (let y = 0; y > ivyTop; y -= 12) ctx.lineTo(x + Math.sin(y * 0.08 + seed) * 3, y);
+      const y0 = Math.floor(ivyBot / 12) * 12;
+      ctx.beginPath(); ctx.moveTo(x + Math.sin(y0 * 0.08 + seed) * 3, y0);
+      for (let y = y0; y > ivyTop; y -= 12) ctx.lineTo(x + Math.sin(y * 0.08 + seed) * 3, y);
       ctx.stroke();
-      for (let y = -6; y > ivyTop; y -= 6.5) {
-        if (season.bare && R() < 0.6) { R(); continue; }
+      // leaves are placed by position, so the ivy looks the same wherever you scroll
+      const cols = leaf.map((c) => mixDark(c, tod.dark * 0.9));
+      for (let y = Math.floor(ivyBot / 6.5) * 6.5 - 6; y > ivyTop; y -= 6.5) {
+        const R = rng(seed * 997 + Math.round(-y * 10));
+        if (season.bare && R() < 0.6) continue;
         const lx = x + Math.sin(y * 0.08 + seed) * 3 + (R() - 0.5) * 9;
-        ell(ctx, lx, y + (R() - 0.5) * 4, 3 + R() * 1.4, 2 + R(), mixDark(leaf[Math.floor(R() * leaf.length)], tod.dark * 0.9), R() * 3);
+        ell(ctx, lx, y + (R() - 0.5) * 4, 3 + R() * 1.4, 2 + R(), cols[Math.floor(R() * cols.length)], R() * 3);
       }
     });
     // lanterns at every floor
     for (let i = 0; i <= topIndex; i++) {
       const y = floorTop(i) + 50;
+      if (y < v.top - 40 || y > v.bottom + 40) continue; // only the lanterns you can see
       [[BX0 - 7, 1], [BX1 + 7, -1]].forEach(([x, side]) => {
         ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + side * 7, y - 12); ctx.lineTo(x, y - 12); ctx.lineTo(x, y - 8); ctx.stroke();
         fillRR(ctx, x - 3.5, y - 8, 7, 10, 1.5, '#3a3440');
         ctx.fillStyle = tod.dark > 0.3 ? '#ffe39a' : '#f3ead3'; ctx.fillRect(x - 2.3, y - 6.5, 4.6, 7);
         if (tod.dark > 0.3) {
           ctx.globalCompositeOperation = 'lighter';
-          const g = ctx.createRadialGradient(x, y - 3, 1, x, y - 3, 26);
-          g.addColorStop(0, `rgba(255,214,130,${0.5 * tod.dark + Math.sin(t * 7 + i) * 0.03})`); g.addColorStop(1, 'rgba(255,214,130,0)');
-          ctx.fillStyle = g; ctx.fillRect(x - 26, y - 29, 52, 52);
+          glow(ctx, x, y - 3, 26, '255,214,130', 0.5 * tod.dark + Math.sin(t * 7 + i) * 0.03);
           ctx.globalCompositeOperation = 'source-over';
         }
       });
@@ -397,7 +433,7 @@ export class Ambient {
         ctx.stroke();
       }
     }
-    const snowing = wx.kind === 'snow' || season.key === 'winter';
+    const snowing = wx.kind === 'snow' || season.key === 'winter' || season.festiveSnow;
     if (snowing) {
       const count = Math.floor(this.flakes.length * (wx.kind === 'snow' ? Math.max(0.3, wx.intensity) : 0.25));
       ctx.fillStyle = 'rgba(255,255,255,0.9)';

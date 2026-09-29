@@ -60,7 +60,9 @@ export const Ads = {
   },
 
   // Resolves true only if the player watched the ad to completion.
+  devInstant: false, // developer tools: every rewarded ad pays out at once, with no ad shown
   async rewarded(placement = 'reward') {
+    if (this.devInstant) return true;
     if (busy) return false;
     busy = true;
     notify(true);
@@ -89,7 +91,7 @@ export const Ads = {
   },
 
   async interstitial(placement = 'break') {
-    if (busy) return;
+    if (this.devInstant || busy) return;
     busy = true; notify(true);
     try {
       if (provider === 'admob') {

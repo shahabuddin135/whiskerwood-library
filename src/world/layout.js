@@ -36,3 +36,7 @@ export const L = {
 };
 
 export const floorTop = (i) => -(i + 1) * FH;
+
+// The wider world: wing plots beside the tower and the Deep Stacks under the garden.
+export const WORLD_L = -470;
+export const WORLD_R = 910;

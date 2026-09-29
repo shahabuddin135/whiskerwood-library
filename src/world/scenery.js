@@ -2,6 +2,8 @@
 import { W, BX0, BX1, FH, GROUND_H, ROOF_H, IX, IW, floorTop } from './layout.js';
 import { rr, fillRR, ell, circ, shade, rng, star, drawMouse, coinIcon, drawCheese } from './draw.js';
 import { drawFoundation, drawLawnDetail, drawLandscape } from './landscape.js';
+import { texRect, texFill } from './textures.js';
+import { glow } from './glow.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 export const DAY_CYCLE = 720; // seconds for a full day in game
@@ -226,46 +228,90 @@ function drawBarn(ctx, x, y, tint) {
   ctx.beginPath(); ctx.moveTo(x - 5, y - 4); ctx.lineTo(x + 5, y + 6); ctx.moveTo(x + 5, y - 4); ctx.lineTo(x - 5, y + 6); ctx.stroke();
 }
 
-/* ---------------- garden apron + underground vault ---------------- */
-export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
-  const L = v.worldLeft - 40; const R = v.worldRight + 40;
-  const dark = tod.dark;
+/* ---------------- garden apron ---------------- */
+// The lawn is painted once into a cached canvas (grass, path, flowers, pond, dock, lamp post,
+// mailbox) and redrawn only when the season, the light or the zoom level changes. The fisher,
+// ripples, cattails, fireflies, lamp glow and each site's garden are drawn live on top.
+const G_X0 = -560; const G_X1 = 1000; const G_Y0 = -22; const G_Y1 = 95;
+let groundCache = null;
+
+function paintGroundStatic(ctx, scene, season, dark) {
+  const L = G_X0; const R = G_X1;
   const tint = (hex) => mix(hex, '#1b2447', Math.min(0.75, dark * 1.05));
   const winter = season.key === 'winter';
-
   // grass apron
   const gg = ctx.createLinearGradient(0, 0, 0, 90);
   gg.addColorStop(0, tint(season.grass[0])); gg.addColorStop(1, tint(season.grass[1]));
   ctx.fillStyle = gg; ctx.fillRect(L, -2, R - L, 92);
-  if (winter) { const Rs = rng(4); for (let k = 0; k < 20; k++) ell(ctx, L + Rs() * (R - L), 10 + Rs() * 75, 8 + Rs() * 14, 1.6, tint('#ffffff')); }
+  // a soft carpet of grass blades (or trodden snow) over the whole lawn
+  texRect(ctx, winter ? 'plaster' : 'grass', L, -2, R - L, 92, winter ? 0.8 : 1);
+  // gently mown stripes
+  if (!winter) { ctx.fillStyle = 'rgba(255,255,255,0.035)'; for (let x = Math.floor(L / 60) * 60; x < R; x += 60) ctx.fillRect(x, 0, 30, 90); }
+  if (winter) { const Rs = rng(4); for (let k = 0; k < 60; k++) ell(ctx, L + Rs() * (R - L), 10 + Rs() * 75, 8 + Rs() * 14, 1.6, tint('#ffffff')); }
   // path
   ctx.fillStyle = tint(winter ? '#e8e1d6' : '#d9c29a'); ctx.beginPath(); ctx.moveTo(190, 0); ctx.quadraticCurveTo(170, 50, 205, 90); ctx.lineTo(250, 90); ctx.quadraticCurveTo(222, 50, 232, 0); ctx.closePath(); ctx.fill();
-  // foundation (each branch's building sits on its own)
+  texFill(ctx, 'soil', 0.8);
+  { const Rs = rng(12); for (let y = 6; y < 88; y += 9) { ell(ctx, 190 - (y / 90) * 8 + Rs() * 3, y, 3, 1.6, tint('#bfae8a')); ell(ctx, 234 + (y / 90) * 14 - Rs() * 3, y, 3, 1.6, tint('#bfae8a')); } }
   drawFoundation(ctx, scene, tint, winter);
-  drawLawnDetail(ctx, scene, season, tint, L, R);
-
+  drawLawnDetail(ctx, scene, season, tint, L, R, 3);
   // flowers (seasonal)
   const Rn = rng(21);
   const fcols = season.flowers;
-  for (let k = 0; k < 46 && fcols.length; k++) {
+  const stem = tint(season.key === 'autumn' ? '#8a7a3a' : '#4f8a44');
+  for (let k = 0; k < 140 && fcols.length; k++) {
     const x = L + Rn() * (R - L); const y = 8 + Rn() * 78;
     if (x > 20 && x < 175 && y > 20 && y < 80) continue; // pond area
-    const col = fcols[k % fcols.length];
-    ctx.strokeStyle = tint(season.key === 'autumn' ? '#8a7a3a' : '#4f8a44'); ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(t + k) * 0.8, y - 5); ctx.stroke();
-    circ(ctx, x + Math.sin(t + k) * 0.8, y - 5.5, 1.8, tint(col));
+    ctx.strokeStyle = stem; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + ((k % 3) - 1) * 0.6, y - 5); ctx.stroke();
+    circ(ctx, x + ((k % 3) - 1) * 0.6, y - 5.5, 1.8, tint(fcols[k % fcols.length]));
   }
-
-  // pond with a fishing mouse on a little dock (frozen in winter: ice fishing!)
+  // pond (frozen in winter)
   ell(ctx, 96, 50, 78, 25, tint(winter ? '#a9c9dc' : '#5f9fb8'));
   ell(ctx, 96, 48, 72, 21, tint(winter ? '#dcecf5' : '#79b8cf'));
-  ctx.strokeStyle = winter ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.8;
-  for (let k = 0; k < 5; k++) { const x = 50 + (winter ? k * 22 : ((k * 31 + t * 5) % 100)); ctx.beginPath(); ctx.moveTo(x, 44 + k * 3); ctx.lineTo(x + (winter ? 14 : 8), 44 + k * 3 + (winter ? -2 : 0)); ctx.stroke(); }
-  if (winter) ell(ctx, 118, 47, 6, 2.2, tint('#4a7f9c'));
-  else [[70, 56], [120, 42], [140, 58]].forEach(([x, y], k) => { ell(ctx, x, y, 7, 3, tint('#5e9c55')); circ(ctx, x + 2, y - 1.5, k === 1 ? 1.8 : 0, tint('#f7a8c4')); });
-  // cattails
-  for (let k = 0; k < 5; k++) { const x = 22 + k * 4; ctx.strokeStyle = tint(winter || season.key === 'autumn' ? '#9a8a5a' : '#4f8a44'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 58); ctx.lineTo(x + Math.sin(t * 1.3 + k) * 1.5, 34 - k * 2); ctx.stroke(); ell(ctx, x + Math.sin(t * 1.3 + k) * 1.5, 34 - k * 2, 1.6, 4, tint('#7a4b2e')); }
+  if (winter) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 0.8;
+    for (let k = 0; k < 5; k++) { const x = 50 + k * 22; ctx.beginPath(); ctx.moveTo(x, 44 + k * 3); ctx.lineTo(x + 14, 42 + k * 3); ctx.stroke(); }
+    ell(ctx, 118, 47, 6, 2.2, tint('#4a7f9c'));
+  } else [[70, 56], [120, 42], [140, 58]].forEach(([x, y], k) => { ell(ctx, x, y, 7, 3, tint('#5e9c55')); circ(ctx, x + 2, y - 1.5, k === 1 ? 1.8 : 0, tint('#f7a8c4')); });
   // dock
   ctx.fillStyle = tint('#9a6b45'); ctx.fillRect(140, 38, 44, 6); ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(146, 44, 3, 12); ctx.fillRect(176, 44, 3, 12);
+  // lamp post + mailbox
+  ctx.fillStyle = tint('#3a3440'); ctx.fillRect(255, -6, 3, 50); fillRR(ctx, 250, -16, 13, 12, 3, tint('#3a3440'));
+  circ(ctx, 256.5, -10, 3.6, dark > 0.3 ? '#fff0a8' : tint('#f0e6c8'));
+  ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(284, 20, 3, 26); fillRR(ctx, 276, 8, 20, 13, 5, tint('#4f7cac')); ctx.fillStyle = tint('#e0404f'); ctx.fillRect(292, 4, 2, 9); ctx.fillRect(292, 4, 6, 3);
+}
+
+// px: the pixels per world unit the cache should be painted at; stable: false while zooming.
+export function drawGround(ctx, v, tod, scene, t, fisher, season, px = 2, stable = true) {
+  const dark = tod.dark;
+  const darkQ = Math.round(dark * 20) / 20;
+  const base = `${scene}|${season.key}|${season.grass.join()}|${season.flowers.join()}|${darkQ}`;
+  const key = `${base}|${px}`;
+  if (!groundCache || (groundCache.key !== key && (stable || groundCache.base !== base))) {
+    const c = groundCache?.c || document.createElement('canvas');
+    const w = Math.ceil((G_X1 - G_X0) * px); const h = Math.ceil((G_Y1 - G_Y0) * px);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, w, h);
+    x.setTransform(px, 0, 0, px, -G_X0 * px, -G_Y0 * px);
+    paintGroundStatic(x, scene, season, darkQ);
+    groundCache = { key, base, c };
+  }
+  ctx.drawImage(groundCache.c, G_X0, G_Y0, G_X1 - G_X0, G_Y1 - G_Y0);
+
+  const tint = (hex) => mix(hex, '#1b2447', Math.min(0.75, dark * 1.05));
+  const winter = season.key === 'winter';
+  // ripples on the pond
+  if (!winter) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.8; ctx.beginPath();
+    for (let k = 0; k < 5; k++) { const x = 50 + ((k * 31 + t * 5) % 100); ctx.moveTo(x, 44 + k * 3); ctx.lineTo(x + 8, 44 + k * 3); }
+    ctx.stroke();
+  }
+  // cattails
+  ctx.strokeStyle = tint(winter || season.key === 'autumn' ? '#9a8a5a' : '#4f8a44'); ctx.lineWidth = 1; ctx.beginPath();
+  for (let k = 0; k < 5; k++) { const x = 22 + k * 4; ctx.moveTo(x, 58); ctx.lineTo(x + Math.sin(t * 1.3 + k) * 1.5, 34 - k * 2); }
+  ctx.stroke();
+  const tail = tint('#7a4b2e');
+  for (let k = 0; k < 5; k++) ell(ctx, 22 + k * 4 + Math.sin(t * 1.3 + k) * 1.5, 34 - k * 2, 1.6, 4, tail);
   // fisher mouse
   const bite = fisher.bite;
   drawMouse(ctx, 164, 38, { fur: '#a98467', belly: '#ecd9c6', dir: -1, pose: 'sit', t, hat: 'sunhat', hatCol: '#e8cf8a', scarf: '#5b7f4d', noShadow: true });
@@ -273,63 +319,21 @@ export function drawGround(ctx, v, tod, scene, t, coins, fisher, season) {
   ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(120, 4 + (bite ? 6 : 0)); ctx.lineTo(118, 46); ctx.stroke();
   circ(ctx, 118, 46 + Math.sin(t * 3) * 0.8 + (bite ? 2 : 0), 1.8, '#e0404f');
   if (bite) { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.ellipse(118, 48, 6 + (t * 8) % 6, 2, 0, 0, Math.PI * 2); ctx.stroke(); }
-
-  // lamp post + mailbox
-  ctx.fillStyle = tint('#3a3440'); ctx.fillRect(255, -6, 3, 50); fillRR(ctx, 250, -16, 13, 12, 3, tint('#3a3440'));
-  circ(ctx, 256.5, -10, 3.6, dark > 0.3 ? '#fff0a8' : tint('#f0e6c8'));
   if (dark > 0.3) {
     ctx.globalCompositeOperation = 'lighter';
-    const lg = ctx.createRadialGradient(256, -10, 2, 256, -10, 50); lg.addColorStop(0, `rgba(255,220,140,${dark * 0.6})`); lg.addColorStop(1, 'rgba(255,220,140,0)');
-    ctx.fillStyle = lg; ctx.fillRect(206, -60, 100, 100); ctx.globalCompositeOperation = 'source-over';
+    glow(ctx, 256, -10, 50, '255,220,140', dark * 0.6); ctx.globalCompositeOperation = 'source-over';
   }
-  ctx.fillStyle = tint('#7a4b2e'); ctx.fillRect(284, 20, 3, 26); fillRR(ctx, 276, 8, 20, 13, 5, tint('#4f7cac')); ctx.fillStyle = tint('#e0404f'); ctx.fillRect(292, 4, 2, 9); ctx.fillRect(292, 4, 6, 3);
-
-  // each branch's garden landscaping on the right of the garden
-  drawLandscape(ctx, scene, t, tod, season, tint, L, R);
-
+  // each site's garden landscaping on the right of the garden
+  if (v.worldRight + 40 > 290 && v.worldLeft - 40 < 460) drawLandscape(ctx, scene, t, tod, season, tint, 290, 452);
   // fireflies at night
   if (dark > 0.35 && !winter) {
     ctx.globalCompositeOperation = 'lighter';
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < 8; k++) {
       const x = 20 + ((k * 67 + Math.sin(t * 0.7 + k) * 30) % 400); const y = 10 + ((k * 23) % 60) + Math.sin(t * 1.3 + k * 2) * 8;
-      const a = (0.5 + 0.5 * Math.sin(t * 3 + k)) * dark;
-      const fg = ctx.createRadialGradient(x, y, 0, x, y, 6); fg.addColorStop(0, `rgba(230,255,150,${a})`); fg.addColorStop(1, 'rgba(230,255,150,0)');
-      ctx.fillStyle = fg; ctx.fillRect(x - 6, y - 6, 12, 12);
+      glow(ctx, x, y, 6, '230,255,150', (0.5 + 0.5 * Math.sin(t * 3 + k)) * dark, -Infinity, Infinity, 'hard');
     }
     ctx.globalCompositeOperation = 'source-over';
   }
-
-  // underground: soil + a cosy vault where the treasure piles up
-  const sg = ctx.createLinearGradient(0, 90, 0, GROUND_H);
-  sg.addColorStop(0, '#7a5638'); sg.addColorStop(1, '#4a3222');
-  ctx.fillStyle = sg; ctx.fillRect(L, 90, R - L, GROUND_H - 90 + 400);
-  ctx.fillStyle = '#5f4029'; ctx.fillRect(L, 90, R - L, 5);
-  const Rp = rng(33);
-  for (let k = 0; k < 60; k++) ell(ctx, L + Rp() * (R - L), 100 + Rp() * 120, 1.5 + Rp() * 3, 1 + Rp() * 2, Rp() < 0.5 ? '#6b4a33' : '#8a6a4c');
-  ctx.strokeStyle = '#8a6a4c'; ctx.lineWidth = 1.4;
-  for (let k = 0; k < 6; k++) { const x = 30 + k * 75; ctx.beginPath(); ctx.moveTo(x, 90); ctx.bezierCurveTo(x + 8, 110, x - 10, 124, x + 4, 140); ctx.stroke(); }
-  // vault room
-  const vx = 150, vy = 120, vw = 170, vh = 80;
-  ctx.fillStyle = '#3a271b'; rr(ctx, vx, vy, vw, vh, 30); ctx.fill();
-  ctx.fillStyle = '#e8cfa0'; rr(ctx, vx + 6, vy + 6, vw - 12, vh - 10, 26); ctx.fill();
-  ctx.fillStyle = '#d4b98a'; ctx.fillRect(vx + 6, vy + vh - 18, vw - 12, 14);
-  // tunnel
-  ctx.fillStyle = '#3a271b'; ctx.fillRect(vx - 60, vy + vh - 26, 64, 20); ctx.fillRect(vx - 64, 90, 18, vy + vh - 96);
-  // treasure pile grows with your wealth
-  const lv = Math.max(0, Math.min(1, Math.log10(Math.max(1, coins)) / 16));
-  const pileW = 20 + lv * 110; const pileH = 6 + lv * 40;
-  ctx.fillStyle = '#e9a623'; ctx.beginPath(); ctx.moveTo(vx + vw / 2 - pileW / 2, vy + vh - 4); ctx.quadraticCurveTo(vx + vw / 2, vy + vh - 4 - pileH * 2, vx + vw / 2 + pileW / 2, vy + vh - 4); ctx.fill();
-  ctx.fillStyle = '#ffd257'; ctx.beginPath(); ctx.moveTo(vx + vw / 2 - pileW / 2 + 6, vy + vh - 5); ctx.quadraticCurveTo(vx + vw / 2, vy + vh - 6 - pileH * 1.7, vx + vw / 2 + pileW / 2 - 6, vy + vh - 5); ctx.fill();
-  const Rc = rng(3);
-  for (let k = 0; k < 6 + lv * 20; k++) coinIcon(ctx, vx + vw / 2 + (Rc() - 0.5) * pileW * 0.8, vy + vh - 6 - Rc() * pileH * 0.8, 2.6);
-  drawCheese(ctx, vx + 26, vy + vh - 12, 1.1); drawCheese(ctx, vx + 40, vy + vh - 10, 0.9);
-  fillRR(ctx, vx + vw - 38, vy + vh - 26, 16, 20, 3, '#8a5a3a'); ctx.fillStyle = '#6b4128'; ctx.fillRect(vx + vw - 38, vy + vh - 20, 16, 2); ctx.fillRect(vx + vw - 38, vy + vh - 12, 16, 2);
-  // sleepy guard mouse
-  drawMouse(ctx, vx + vw - 58, vy + vh - 4, { fur: '#8f7f73', belly: '#d9cdc2', dir: -1, pose: 'sit', t: t * 0.3, sleep: true, hat: 'bobble', hatCol: '#4f7cac', noShadow: true });
-  ctx.fillStyle = '#fff'; ctx.font = `600 7px ${FONT}`; ctx.textAlign = 'center';
-  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 2); ctx.fillText('z', vx + vw - 52 + Math.sin(t) * 2, vy + vh - 34 - ((t * 6) % 10)); ctx.globalAlpha = 1;
-  fillRR(ctx, vx + vw / 2 - 52, vy + 12, 104, 13, 6, 'rgba(90,60,35,0.85)');
-  ctx.fillStyle = '#fff3dc'; ctx.font = `600 8px ${FONT}`; ctx.textBaseline = 'middle'; ctx.fillText('The Cheese & Coin Vault', vx + vw / 2, vy + 18.8); ctx.textBaseline = 'alphabetic';
 }
 
 /* ---------------- roof ---------------- */
@@ -433,7 +437,7 @@ export function drawConstruction(ctx, i, t, progress, remaining) {
 }
 
 /* ---------------- "build next floor" balloon sign ---------------- */
-export function drawBuildSign(ctx, y, t, name, costText, affordable) {
+export function drawBuildSign(ctx, y, t, name, costText, affordable, head = '➕ BUILD A NEW FLOOR', coin = true) {
   const cx = (BX0 + BX1) / 2;
   const bob = Math.sin(t * 1.6) * 4;
   const sy = y + bob;
@@ -445,19 +449,17 @@ export function drawBuildSign(ctx, y, t, name, costText, affordable) {
   });
   const w = 200, h = 62;
   if (affordable) {
-    const glow = ctx.createRadialGradient(cx, sy + 11, 10, cx, sy + 11, 130);
-    glow.addColorStop(0, `rgba(255,230,140,${0.35 + 0.15 * Math.sin(t * 4)})`); glow.addColorStop(1, 'rgba(255,230,140,0)');
-    ctx.fillStyle = glow; ctx.fillRect(cx - 130, sy - 120, 260, 260);
+    glow(ctx, cx, sy + 11, 130, '255,230,140', 0.35 + 0.15 * Math.sin(t * 4));
   }
   fillRR(ctx, cx - w / 2, sy - 20, w, h, 10, '#8a5a3a');
   fillRR(ctx, cx - w / 2 + 4, sy - 16, w - 8, h - 8, 8, affordable ? '#fff3dc' : '#eadfcb');
   ctx.fillStyle = '#6b4128'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `700 11px ${FONT}`; ctx.fillText('➕ BUILD A NEW FLOOR', cx, sy - 5);
+  ctx.font = `700 11px ${FONT}`; ctx.fillText(head, cx, sy - 5);
   ctx.font = `600 13px ${FONT}`; ctx.fillStyle = '#3d2a1e'; ctx.fillText(name, cx, sy + 11);
   ctx.font = `700 12px ${FONT}`; ctx.fillStyle = affordable ? '#2f8a3a' : '#a0522d';
   const tw = ctx.measureText(costText).width;
-  coinIcon(ctx, cx - tw / 2 - 7, sy + 27, 5);
-  ctx.fillText(costText, cx + 4, sy + 27.5);
+  if (coin) { coinIcon(ctx, cx - tw / 2 - 7, sy + 27, 5); ctx.fillText(costText, cx + 4, sy + 27.5); }
+  else ctx.fillText(costText, cx, sy + 27.5);
   return { x0: cx - w / 2, x1: cx + w / 2, y0: sy - 80, y1: sy + h - 20 };
 }
 

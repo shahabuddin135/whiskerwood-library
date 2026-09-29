@@ -17,6 +17,7 @@ export class StoryUI {
         <div class="story-main">
           <div class="story-name"><b></b><small></small></div>
           <div class="story-text"></div>
+          <div class="story-choices"></div>
           <div class="story-next">tap to continue ▸</div>
         </div>
         <button class="story-skip">Skip</button>
@@ -24,6 +25,9 @@ export class StoryUI {
     document.body.appendChild(this.el);
     this.el.addEventListener('click', (e) => {
       if (e.target.closest('.story-skip')) { this.finish(); return; }
+      const opt = e.target.closest('[data-opt]');
+      if (opt) { this.choose(+opt.dataset.opt); return; }
+      if (this.choosing) return; // waiting for an answer
       this.advance();
     });
     this.typer = null;
@@ -62,6 +66,17 @@ export class StoryUI {
 
   show() {
     const { lines, k } = this.active;
+    const box = this.el.querySelector('.story-choices');
+    // A question: the player picks an answer ('?' lines hold the options).
+    if (lines[k][0] === '?') {
+      this.choosing = lines[k][1];
+      this.el.querySelector('.story-card').classList.add('asking');
+      box.innerHTML = this.choosing.map((o, j) => `<button class="story-opt" data-opt="${j}">${o.label}</button>`).join('');
+      return;
+    }
+    this.choosing = null;
+    box.innerHTML = '';
+    this.el.querySelector('.story-card').classList.remove('asking');
     const [who, text] = lines[k];
     const ch = CHARACTERS[who];
     this.el.querySelector('.story-portrait').src = portrait(who);
@@ -82,6 +97,20 @@ export class StoryUI {
     this.fullText = text;
   }
 
+  choose(j) {
+    const opt = this.choosing?.[j];
+    if (!opt) return;
+    sfx.tap();
+    const { lines, k } = this.active;
+    const q = lines[k];
+    // the answer's reply plays next; a wrong answer asks the question again
+    const next = [...opt.lines, ...(opt.retry ? [q] : [])];
+    this.active.lines = [...lines.slice(0, k + 1), ...next, ...lines.slice(k + 1)];
+    this.choosing = null;
+    this.active.k++;
+    this.show();
+  }
+
   advance() {
     if (!this.active) return;
     if (this.typing) { clearInterval(this.typer); this.typing = false; this.el.querySelector('.story-text').textContent = this.fullText; return; }
@@ -92,7 +121,14 @@ export class StoryUI {
   }
 
   finish() {
+    // skipping never skips a question: jump to it instead
+    if (this.active) {
+      const q = this.active.lines.findIndex((l, j) => j >= this.active.k && l[0] === '?');
+      if (q >= 0 && !this.choosing) { clearInterval(this.typer); this.typing = false; this.active.k = q; this.show(); return; }
+      if (this.choosing) return;
+    }
     clearInterval(this.typer);
+    this.choosing = null;
     const id = this.active?.id;
     this.active = null;
     this.el.classList.remove('show');
