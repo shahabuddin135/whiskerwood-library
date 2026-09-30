@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "build:site": "node scripts/build-site.mjs",
     "preview": "vite preview --host",
     "simulate": "node scripts/simulate.mjs",
     "cap:sync": "vite build && npx cap sync",
@@ -14,7 +15,9 @@
     "ios": "vite build && npx cap sync ios && npx cap open ios",
     "store-assets": "node scripts/store-assets.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "android:release": "vite build && npx cap sync android && cd android && gradlew bundleRelease"
+    "android:apk": "vite build && npx cap sync android && node scripts/gradle.mjs assembleDebug",
+    "android:apk:release": "vite build && npx cap sync android && node scripts/gradle.mjs assembleRelease",
+    "android:release": "vite build && npx cap sync android && node scripts/gradle.mjs bundleRelease"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.1.0",

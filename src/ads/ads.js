@@ -2,6 +2,8 @@
 //  1. AdMob via @capacitor-community/admob (native Android / iOS builds)
 //  2. Google H5 Games Ads (adBreak) on the web, when a publisher id is configured
 //  3. A clearly labelled mock ad for local development
+// The website build (VITE_SITE=1, see scripts/build-site.mjs) has no ads: rewarded "ads" become a
+// short thank-you bonus that points to the Android app, and interstitials are skipped.
 // Rewarded ads are always opt-in (player taps a 📺 button) as required by ad network policies.
 import { Capacitor } from '@capacitor/core';
 import { CONFIG } from '../config.js';
@@ -13,6 +15,8 @@ let lastAdAt = 0;
 let sessionStart = Date.now();
 let busy = false;
 const listeners = new Set();
+const SITE = !!import.meta.env.VITE_SITE;
+const PLAY_URL = import.meta.env.VITE_PLAY_URL || '';
 
 export const Ads = {
   get provider() { return provider; },
@@ -70,7 +74,7 @@ export const Ads = {
     try {
       if (provider === 'admob') ok = await admobRewarded(this.ids());
       else if (provider === 'h5') ok = await h5Rewarded(placement);
-      else ok = await mockAd('rewarded', placement);
+      else ok = SITE ? await webBonus() : await mockAd('rewarded', placement);
     } catch (e) {
       console.warn('rewarded failed', e);
       ok = false;
@@ -92,6 +96,7 @@ export const Ads = {
 
   async interstitial(placement = 'break') {
     if (this.devInstant || busy) return;
+    if (SITE && provider === 'mock') return; // no breaks in the web version
     busy = true; notify(true);
     try {
       if (provider === 'admob') {
@@ -160,6 +165,28 @@ function h5Rewarded(name) {
 }
 
 // Development stand-in so every ad placement can be tested in a browser.
+// The web version's stand-in for a rewarded ad: a quick thank-you, then the reward.
+function webBonus() {
+  return new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'mock-ad';
+    el.innerHTML = `
+      <div class="mock-ad-card">
+        <div class="mock-ad-tag">WEB BONUS</div>
+        <div class="mock-ad-art">🎁</div>
+        <div class="mock-ad-title">Thanks for playing!</div>
+        <div class="mock-ad-sub">Here's your bonus.${PLAY_URL ? ` <a href="${PLAY_URL}" target="_blank" rel="noopener">Get the Android app</a> to take your library everywhere.` : ''}</div>
+        <div class="mock-ad-bar"><i></i></div>
+        <button class="mock-ad-close" disabled>…</button>
+      </div>`;
+    document.body.appendChild(el);
+    const btn = el.querySelector('.mock-ad-close'); const bar = el.querySelector('.mock-ad-bar i');
+    bar.style.transition = 'width 1.2s linear'; requestAnimationFrame(() => { bar.style.width = '100%'; });
+    setTimeout(() => { btn.disabled = false; btn.textContent = '✓'; }, 1200);
+    btn.addEventListener('click', () => { el.remove(); resolve(true); });
+  });
+}
+
 function mockAd(kind, placement) {
   return new Promise((resolve) => {
     const secs = CONFIG.ads.mockSeconds;

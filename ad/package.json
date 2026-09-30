@@ -1,0 +1,13 @@
+{
+  "name": "whiskerwood-ad",
+  "private": true,
+  "type": "module",
+  "description": "Renders the Whiskerwood Library video ad from the real game (see README.md).",
+  "scripts": {
+    "render": "node render.mjs",
+    "preview": "node render.mjs --preview"
+  },
+  "devDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "voice": "af_heart",
+  "speed": 0.82,
+  "lines": [
+    {
+      "id": "line1",
+      "file": "line1.wav",
+      "text": "Once upon a time, a little mouse opened a little library.",
+      "duration": 3.869
+    },
+    {
+      "id": "line2",
+      "file": "line2.wav",
+      "text": "Readers came, and it grew, one cozy floor at a time.",
+      "duration": 3.826
+    },
+    {
+      "id": "line3",
+      "file": "line3.wav",
+      "text": "Through spring blossoms, summer sun, autumn leaves, and winter snow,",
+      "duration": 4.348
+    },
+    {
+      "id": "line3a",
+      "file": "line3a.wav",
+      "text": "Through spring blossoms,",
+      "duration": 1.41
+    },
+    {
+      "id": "line3b",
+      "file": "line3b.wav",
+      "text": "summer sun,",
+      "duration": 0.774
+    },
+    {
+      "id": "line3c",
+      "file": "line3c.wav",
+      "text": "autumn leaves,",
+      "duration": 0.726
+    },
+    {
+      "id": "line3d",
+      "file": "line3d.wav",
+      "text": "and winter snow,",
+      "duration": 1.148
+    },
+    {
+      "id": "line4",
+      "file": "line4.wav",
+      "text": "And there was always something to celebrate.",
+      "duration": 2.272
+    },
+    {
+      "id": "line5",
+      "file": "line5.wav",
+      "text": "But deep below, a lonely dragon was waiting for a bedtime story.",
+      "duration": 4.516
+    },
+    {
+      "id": "line6",
+      "file": "line6.wav",
+      "text": "Whiskerwood Library. Your story is waiting.",
+      "duration": 2.951
+    }
+  ]
+}

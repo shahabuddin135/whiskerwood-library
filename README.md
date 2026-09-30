@@ -317,10 +317,22 @@ Set `CONFIG.ads.h5.client` to your AdSense publisher ID to use Google's H5 Games
 
 ## Building the mobile apps (Capacitor)
 
-**Android** (the project is already generated in `android/`, and it builds with JDK 21):
-```bash
-npm run android      # builds, syncs and opens Android Studio → Run ▶
-```
+**Android** (the project is already generated in `android/`).
+
+You need **Java 21** (Capacitor 8's plugins compile with it) and the Android SDK (it comes with Android Studio). The build launcher, [scripts/gradle.mjs](scripts/gradle.mjs), finds both on its own:
+- **Java:** it looks in `D:\Java`, the usual install folders, Android Studio's bundled Java, or the `JAVA21_HOME` environment variable.
+- **Android SDK:** it writes `android/local.properties` for you.
+
+Every command below builds the game, copies it into the Android project and runs Gradle, from Windows `cmd`, PowerShell, macOS or Linux. Copy only the command, not the explanation next to it.
+
+| Command | You get | For |
+|---|---|---|
+| `npm run android:apk` | `android/app/build/outputs/apk/debug/app-debug.apk` | Testing: install it on any phone (no signing needed) |
+| `npm run android:apk:release` | `android/app/build/outputs/apk/release/app-release.apk` | A signed APK to share outside Google Play (needs your upload key, see below) |
+| `npm run android:release` | `android/app/build/outputs/bundle/release/app-release.aab` | Uploading to Google Play (needs your upload key) |
+| `npm run android` | Opens Android Studio | Running on an emulator or a plugged-in phone with Run ▶ |
+
+To install the test APK, copy it to your phone and open it (allow "install unknown apps" when asked). Or, with the phone plugged in and USB debugging on, run `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
 Native features on Android:
 - The hardware **back button** closes dialogs, then the sheet, then asks before leaving.
 - The status bar is hidden for immersive play, with edge-to-edge safe areas.
@@ -333,7 +345,7 @@ Native features on Android:
 ## 🚀 Publishing on Google Play (step by step)
 
 1. **Turn off the developer tools:** set `devTools: false` in [src/config.js](src/config.js) (the DEV tag on ⚙️ disappears).
-2. **Create your upload key.** Do this once, and keep the file and passwords safe and backed up:
+2. **Create your upload key.** Do this once, and keep the file and passwords safe and backed up (if you lose them, you can't update the app). `keytool` comes with Java: use the full path if your terminal can't find it (for example `D:\Java\jdk-21.0.12.1+1\bin\keytool`).
    ```bash
    keytool -genkeypair -v -keystore android/whiskerwood-upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
    ```
@@ -347,21 +359,21 @@ Native features on Android:
 3. **Set your real IDs:**
    - AdMob App ID in `android/app/src/main/AndroidManifest.xml`
    - Ad unit IDs in `src/config.js`, with `ads.admob.testing = false`
-   - `privacyUrl` in `src/config.js`
-4. **Host the privacy policy.** Fill in your support email in `docs/privacy-policy.html` and publish it (GitHub Pages is free).
+   - `privacyUrl` in `src/config.js` (your website's `/privacy` page)
+4. **Put the website online** (see [Website](#-website-vercel) below). It hosts the privacy policy, the terms, `app-ads.txt` and a playable web version.
 5. **Bump the version.** Increase `versionCode` (for example 2 → 3) and `versionName` in `android/app/build.gradle` for every upload.
 6. **Build the signed bundle:**
    ```bash
-   npm run android:release        # → android/app/build/outputs/bundle/release/app-release.aab
+   npm run android:release
    ```
-   You can also use Android Studio: *Build → Generate Signed Bundle / APK → Android App Bundle*.
+   It's written to `android/app/build/outputs/bundle/release/app-release.aab`. You can also use Android Studio: *Build → Generate Signed Bundle / APK → Android App Bundle*.
 7. **Play Console:**
    - Create the app → **Internal testing** → upload the `.aab` → test on your phone.
    - Complete **App content** (ads, target audience, content rating, data safety) using the answers in [docs/store-listing.md](docs/store-listing.md).
    - Add the store listing text and graphics from `docs/store/` (regenerate them with `npm run store-assets`).
    - Promote to **Closed testing**. New personal developer accounts must run a closed test with at least 12 testers for 14 days before production access.
    - Then go to **Production**.
-8. **AdMob:** add the app's Play Store link in AdMob, set up the GDPR message under *Privacy & messaging*, and wait for AdMob to review the app before real ads serve.
+8. **AdMob:** add the app's Play Store link in AdMob, set up the GDPR message under *Privacy & messaging*, and wait for AdMob to review the app before real ads serve. Put your website address in the Play listing's **Website** field, so AdMob can find your `app-ads.txt`.
 
 **iOS** (requires a Mac with Xcode):
 ```bash
@@ -370,6 +382,45 @@ npx cap add ios
 npm run ios
 ```
 Add to `ios/App/App/Info.plist`: `GADApplicationIdentifier` (your iOS AdMob App ID), the `SKAdNetworkItems` list from Google's docs, and `NSUserTrackingUsageDescription` ("Your data will be used to show you relevant ads."). The launcher icons and splash screens were generated from `assets/` with `npx @capacitor/assets generate`.
+
+---
+
+## 🌐 Website (Vercel)
+
+[site/](site/) is the game's website. [scripts/build-site.mjs](scripts/build-site.mjs) builds it into `site-dist/`, and [vercel.json](vercel.json) tells Vercel how to build and serve it:
+
+| Page | What it is |
+|---|---|
+| `/` | The landing page: trailers, features, seasons and festivals, the story, screenshots and FAQ |
+| `/play/` | The game itself, playable in a browser. It has no ads: rewarded "ads" become a thank-you bonus, see [src/ads/ads.js](src/ads/ads.js) |
+| `/privacy` | The privacy policy (for the Play Console and the in-game link) |
+| `/terms` | Terms of use |
+| `/app-ads.txt` | AdMob's authorised-sellers file |
+| `robots.txt`, `sitemap.xml`, 404 page | For search engines, and for broken links |
+
+**1. Fill in your details** in [site/site.config.json](site/site.config.json):
+- `developer`: your name or studio.
+- `supportEmail`: the same address you give Google Play.
+- `siteUrl`: your Vercel address.
+- `playStoreLive`: set it to `true` once the game is published. The "Coming soon" button then becomes "Get it on Google Play".
+- `admobPublisherId`: optional, `pub-…`. Without it, the id is taken from your real AdMob app id in `src/config.js`.
+
+Check the result locally:
+```bash
+npm run build:site
+npx serve site-dist
+```
+
+**2. Deploy.** Either:
+- Push the repo to GitHub, then on [vercel.com](https://vercel.com) choose **Add New → Project → Import** this repository and click **Deploy**. `vercel.json` sets the build command and output folder, so leave the other settings as they are. Every later push redeploys.
+- Or, without GitHub: run `npx vercel` in the project folder (log in once), then `npx vercel --prod`.
+
+**3. Point everything at it.** Say your site is `https://whiskerwood-library.vercel.app`:
+- In `site/site.config.json`, set `siteUrl`. In `src/config.js`, set `privacyUrl` to `https://…/privacy`. Both are already set to that address, so change them if yours is different.
+- In the Play Console: *App content → Privacy policy* is `https://…/privacy`, and *Store listing → Website* is `https://…`.
+- In AdMob: *Apps → your app → app-ads.txt* should find your file within a day or so. It needs your real publisher id, so redeploy after you add it.
+
+**Refreshing the pictures and trailers:** re-render the ads and their clean stills (see [ad/README.md](ad/README.md)), then run `python site/make-media.py`. The images and trailers in `site/img` and `site/media` are committed, so Vercel doesn't need Python or ffmpeg.
 
 ---
 
@@ -392,7 +443,10 @@ src/
   audio/               Web Audio setup, procedural waltz (music.js), sound effects (sfx.js)
   ads/ads.js           AdMob / H5 / mock ad providers
 public/audio/          Kenney CC0 sound effects (mp3)
-scripts/               balance simulator, tuner, logic smoke test, store-asset generator
+scripts/               balance simulator, tuner, logic smoke tests, store-asset generator,
+                       build-site.mjs (the website) and gradle.mjs (Android builds on any OS)
+site/                  the website: pages, styles, images and trailers (see "Website" above)
+ad/                    the two video ads, rendered from the real game (see ad/README.md)
 docs/                  privacy policy, store listing + Play Console answers, store graphics, soundtrack previews
 android/               Capacitor Android project (AdMob App ID, signing config, notification icons)
 ```

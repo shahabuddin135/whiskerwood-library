@@ -13,3 +13,5 @@ ios/App/build/
 android/keystore.properties
 *.jks
 *.keystore
+site-dist/
+.vercel/

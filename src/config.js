@@ -9,8 +9,9 @@ export const CONFIG = {
   // Settings (more cheese/coins, finish every timer, instant ads). A "DEV" tag shows on the settings
   // button while this is on. ⚠️ Set to false before building the version you upload to Google Play.
   devTools: false,
-  // Host docs/privacy-policy.html (e.g. GitHub Pages) and put the public URL here + in the Play Console.
-  privacyUrl: 'https://YOUR-USERNAME.github.io/whiskerwood-library/privacy-policy.html',
+  // The website (site/, deployed on Vercel) hosts the policy: put the same URL in the Play Console.
+  // If your Vercel address is different, change it here and in site/site.config.json.
+  privacyUrl: 'https://whiskerwood-library.vercel.app/privacy',
 
   ads: {
     // Google AdMob (native Android/iOS via Capacitor). These are Google's official TEST ids.

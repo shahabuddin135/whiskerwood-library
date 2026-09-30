@@ -1,0 +1,10 @@
+{
+  "name": "Whiskerwood Library",
+  "siteUrl": "https://whiskerwood-library.vercel.app",
+  "developer": "YOUR NAME OR STUDIO",
+  "supportEmail": "YOUR-SUPPORT-EMAIL@example.com",
+  "packageId": "com.whiskerwood.library",
+  "playStoreLive": false,
+  "admobPublisherId": "",
+  "policyDate": "30 September 2026"
+}
