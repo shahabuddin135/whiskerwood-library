@@ -3,6 +3,7 @@
 // (250..300) and the seasonal props (285..340), so the busy parts of the garden never overlap.
 import { BX0, BX1 } from './layout.js';
 import { fillRR, ell, circ, rng, star } from './draw.js';
+import { art } from './sprites.js';
 
 // Foundation under the building.
 export function drawFoundation(ctx, scene, tint, winter) {
@@ -46,21 +47,21 @@ export function drawLawnDetail(ctx, scene, season, tint, L, R, density = 1) {
 }
 
 // The big feature on the right of the garden (x 336..R) plus a few extras.
-export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
+// live = false paints the parts that never move (they go into the cached lawn picture);
+// live = true draws only the moving parts, every frame.
+export function drawLandscape(ctx, scene, t, tod, season, tint, L, R, live = false) {
   const winter = season.key === 'winter';
   switch (scene) {
     case 'windmill': {
       // golden barley rows swaying in the wind, a hay cart and flour sacks
       const col = winter ? '#e8e1d6' : season.key === 'spring' ? '#a9cf6a' : '#e0b54a';
-      for (let row = 0; row < 4; row++) {
-        const y = 30 + row * 14;
-        ctx.fillStyle = tint(winter ? '#dfe6ee' : '#9c7a3a'); ctx.fillRect(342, y + 1, R - 342, 2);
-        for (let x = 344 + (row % 2) * 3; x < R; x += 5) {
-          const sw = Math.sin(t * 1.6 + x * 0.08 + row) * 1.6;
-          ctx.strokeStyle = tint(col); ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(x, y + 1); ctx.quadraticCurveTo(x + sw * 0.5, y - 6, x + sw, y - 11); ctx.stroke();
-          if (!winter) ell(ctx, x + sw, y - 12, 1.3, 3, tint(col), sw * 0.1);
-        }
+      if (live) {
+        // each row is one picture, leaning in the wind
+        const darkQ = Math.round(tod.dark * 20) / 20;
+        for (let row = 0; row < 4; row++) art(ctx, `barley|${row}|${col}|${darkQ}|${R}`, [340, -16, R - 336, 20], paintBarley, { row, col, winter, R, tint }, 0, 31 + row * 14, 1, -Math.sin(t * 1.6 + row) * 0.12);
+        break;
       }
+      for (let row = 0; row < 4; row++) { ctx.fillStyle = tint(winter ? '#dfe6ee' : '#9c7a3a'); ctx.fillRect(342, 31 + row * 14, R - 342, 2); }
       // hay cart
       const cx = 352; const cy = 82;
       fillRR(ctx, cx - 16, cy - 12, 32, 8, 2, tint('#8a5a3a'));
@@ -72,16 +73,20 @@ export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
       break;
     }
     case 'cove': {
+      if (live) {
+        // sparkles, the foam line, the rowing boat, a crab and the seagrass
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; for (let k = 0; k < 6; k++) ctx.fillRect(334 + ((k * 23 + t * 8) % 100), 64 + (k % 3) * 7, 9, 1.2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); for (let x = 330; x < R; x += 4) ctx.lineTo(x, 62 + Math.sin(x * 0.2 + t * 2) * 1.2); ctx.stroke();
+        const bx = 392 + Math.sin(t * 0.5) * 8; const by = 74 + Math.sin(t * 1.2) * 0.8;
+        ctx.fillStyle = tint('#8a5a3a'); ctx.beginPath(); ctx.moveTo(bx - 12, by); ctx.lineTo(bx + 12, by); ctx.lineTo(bx + 8, by + 5); ctx.lineTo(bx - 8, by + 5); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = tint('#fbf6ea'); ctx.beginPath(); ctx.moveTo(bx, by - 18); ctx.lineTo(bx, by - 1); ctx.lineTo(bx + 10, by - 1); ctx.closePath(); ctx.fill();
+        { const cx = 380 + Math.sin(t * 0.7) * 8; ell(ctx, cx, 47, 3.4, 2.2, tint('#e0604a')); [-1, 1].forEach((d) => { circ(ctx, cx + d * 4.5, 45, 1.3, tint('#e0604a')); ctx.strokeStyle = tint('#e0604a'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(cx + d * 2, 48); ctx.lineTo(cx + d * 4.5, 50); ctx.stroke(); }); circ(ctx, cx - 1, 45.5, 0.5, '#1d1b24'); circ(ctx, cx + 1, 45.5, 0.5, '#1d1b24'); }
+        ctx.strokeStyle = tint('#8aa05a'); ctx.lineWidth = 0.8; ctx.beginPath(); for (let k = 0; k < 8; k++) { const x = 302 + k * 4; ctx.moveTo(x, 42); ctx.quadraticCurveTo(x + Math.sin(t + k) * 2, 36, x + Math.sin(t + k) * 3, 32); } ctx.stroke();
+        break;
+      }
       // sand, surf and sea (original), plus beach life
       ctx.fillStyle = tint(winter ? '#e9e4da' : '#f0dcae'); ctx.fillRect(300, 40, R - 300, 50);
       ctx.fillStyle = tint('#6fb3d6'); ctx.fillRect(330, 62, R - 330, 28);
-      ctx.fillStyle = 'rgba(255,255,255,0.6)'; for (let k = 0; k < 6; k++) ctx.fillRect(334 + ((k * 23 + t * 8) % 100), 64 + (k % 3) * 7, 9, 1.2);
-      // foam line
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); for (let x = 330; x < R; x += 4) ctx.lineTo(x, 62 + Math.sin(x * 0.2 + t * 2) * 1.2); ctx.stroke();
-      // rowing boat on the water
-      const bx = 392 + Math.sin(t * 0.5) * 8; const by = 74 + Math.sin(t * 1.2) * 0.8;
-      ctx.fillStyle = tint('#8a5a3a'); ctx.beginPath(); ctx.moveTo(bx - 12, by); ctx.lineTo(bx + 12, by); ctx.lineTo(bx + 8, by + 5); ctx.lineTo(bx - 8, by + 5); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = tint('#fbf6ea'); ctx.beginPath(); ctx.moveTo(bx, by - 18); ctx.lineTo(bx, by - 1); ctx.lineTo(bx + 10, by - 1); ctx.closePath(); ctx.fill();
       // beach umbrella + towel
       ctx.strokeStyle = tint('#8a8577'); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(410, 58); ctx.lineTo(414, 26); ctx.stroke();
       ctx.fillStyle = tint('#d9534f'); ctx.beginPath(); ctx.moveTo(398, 30); ctx.quadraticCurveTo(414, 14, 430, 26); ctx.closePath(); ctx.fill();
@@ -92,12 +97,15 @@ export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
       ctx.fillStyle = tint('#d9534f'); ctx.fillRect(351, 34, 0.8, 6); ctx.fillRect(351.8, 34, 4, 2.4);
       fillRR(ctx, 366, 48, 7, 7, 1, tint('#4f7cac')); ctx.strokeStyle = tint('#3a5a8c'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(369.5, 48, 3.5, Math.PI, 0); ctx.stroke();
       [[374, 56, '#f7c9b6'], [342, 58, '#fbe7c6'], [428, 58, '#f2d7e8']].forEach(([x, y, c]) => { ctx.fillStyle = tint(c); ctx.beginPath(); ctx.moveTo(x, y - 3); ctx.lineTo(x - 3, y + 1); ctx.quadraticCurveTo(x, y + 2.5, x + 3, y + 1); ctx.closePath(); ctx.fill(); });
-      { const cx = 380 + Math.sin(t * 0.7) * 8; ell(ctx, cx, 47, 3.4, 2.2, tint('#e0604a')); [-1, 1].forEach((d) => { circ(ctx, cx + d * 4.5, 45, 1.3, tint('#e0604a')); ctx.strokeStyle = tint('#e0604a'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(cx + d * 2, 48); ctx.lineTo(cx + d * 4.5, 50); ctx.stroke(); }); circ(ctx, cx - 1, 45.5, 0.5, '#1d1b24'); circ(ctx, cx + 1, 45.5, 0.5, '#1d1b24'); }
-      // seagrass on the dune
-      ctx.strokeStyle = tint('#8aa05a'); ctx.lineWidth = 0.8; for (let k = 0; k < 8; k++) { const x = 302 + k * 4; ctx.beginPath(); ctx.moveTo(x, 42); ctx.quadraticCurveTo(x + Math.sin(t + k) * 2, 36, x + Math.sin(t + k) * 3, 32); ctx.stroke(); }
       break;
     }
     case 'pond': {
+      if (live) {
+        ctx.strokeStyle = tint(season.key === 'autumn' || winter ? '#9a8a5a' : '#4f8a44'); ctx.lineWidth = 1; ctx.beginPath();
+        for (let k = 0; k < 7; k++) { const x = 420 + k * 3; ctx.moveTo(x, 66); ctx.lineTo(x + Math.sin(t * 1.3 + k) * 1.5, 44 - (k % 3) * 3); }
+        ctx.stroke();
+        break;
+      }
       // a lily pond with a little red bridge, stepping stones and lantern posts
       ell(ctx, 392, 58, 46, 18, tint(winter ? '#a9c9dc' : '#5f9fb8')); ell(ctx, 392, 57, 42, 15, tint(winter ? '#dcecf5' : '#79b8cf'));
       if (!winter) [[374, 56], [398, 64], [414, 52], [386, 50]].forEach(([x, y], k) => { ell(ctx, x, y, 6, 2.6, tint('#5e9c55')); ctx.fillStyle = tint('#79b8cf'); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 6, y - 1); ctx.lineTo(x + 6, y + 1); ctx.fill(); if (k % 2 === 0) { circ(ctx, x - 1, y - 1.5, 1.8, tint('#f7a8c4')); circ(ctx, x - 1, y - 1.5, 0.7, tint('#ffe28a')); } });
@@ -109,12 +117,14 @@ export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
       [[340, 78], [350, 84], [362, 80]].forEach(([x, y]) => ell(ctx, x, y, 5, 2.4, tint('#b9b3a8')));
       // lantern posts
       [346, 430].forEach((x) => { ctx.fillStyle = tint('#4a4a52'); ctx.fillRect(x - 1, 30, 2, 36); fillRR(ctx, x - 4, 22, 8, 9, 2, tint('#4a4a52')); circ(ctx, x, 26.5, 2.6, tod.dark > 0.3 ? '#ffd98a' : tint('#f0e6c8')); });
-      // reeds
-      ctx.strokeStyle = tint(season.key === 'autumn' || winter ? '#9a8a5a' : '#4f8a44'); ctx.lineWidth = 1;
-      for (let k = 0; k < 7; k++) { const x = 420 + k * 3; ctx.beginPath(); ctx.moveTo(x, 66); ctx.lineTo(x + Math.sin(t * 1.3 + k) * 1.5, 44 - (k % 3) * 3); ctx.stroke(); }
       break;
     }
     case 'castle': {
+      if (live) {
+        if (!winter) { ctx.strokeStyle = 'rgba(160,210,235,0.9)'; ctx.lineWidth = 1; ctx.beginPath(); [-1, 1].forEach((d) => { ctx.moveTo(388, 40); ctx.quadraticCurveTo(388 + d * 8, 30 + Math.sin(t * 6) * 0.6, 388 + d * 12, 58); }); ctx.stroke(); }
+        [330, 446].forEach((x, k) => { ctx.fillStyle = tint(k ? '#6d5fa3' : '#c0392b'); ctx.beginPath(); ctx.moveTo(x + 1, 4); ctx.lineTo(x + 12 + Math.sin(t * 2.5 + k) * 1.5, 7); ctx.lineTo(x + 12 + Math.sin(t * 2.5 + k) * 1.5, 22); ctx.lineTo(x + 6, 19); ctx.lineTo(x + 1, 22); ctx.closePath(); ctx.fill(); star(ctx, x + 6.5, 12, 2.2, '#f2d27a'); });
+        break;
+      }
       // cobbled courtyard with a fountain, topiary and banner poles
       const Rn = rng(71);
       ctx.fillStyle = tint('#b9b3c9'); ctx.beginPath(); ctx.ellipse(388, 58, 54, 26, 0, 0, Math.PI * 2); ctx.fill();
@@ -122,7 +132,6 @@ export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
       // fountain
       ell(ctx, 388, 62, 17, 6, tint('#8d8aa3')); ell(ctx, 388, 60, 14, 4.4, tint(winter ? '#dcecf5' : '#79b8cf'));
       ctx.fillStyle = tint('#8d8aa3'); ctx.fillRect(386, 42, 4, 18); ell(ctx, 388, 42, 7, 2.4, tint('#8d8aa3'));
-      if (!winter) { ctx.strokeStyle = 'rgba(160,210,235,0.9)'; ctx.lineWidth = 1; [-1, 1].forEach((d) => { ctx.beginPath(); ctx.moveTo(388, 40); ctx.quadraticCurveTo(388 + d * 8, 30 + Math.sin(t * 6) * 0.6, 388 + d * 12, 58); ctx.stroke(); }); }
       // topiary
       [[346, 70, 'ball'], [430, 70, 'cone'], [352, 42, 'cone'], [426, 42, 'ball']].forEach(([x, y, k]) => {
         fillRR(ctx, x - 4, y - 5, 8, 6, 1.5, tint('#b5523b'));
@@ -130,10 +139,11 @@ export function drawLandscape(ctx, scene, t, tod, season, tint, L, R) {
         else { ctx.fillStyle = tint(winter ? '#e8eef3' : '#4f8a44'); ctx.beginPath(); ctx.moveTo(x - 7, y - 4); ctx.lineTo(x, y - 26); ctx.lineTo(x + 7, y - 4); ctx.closePath(); ctx.fill(); }
       });
       // banner poles
-      [330, 446].forEach((x, k) => { ctx.fillStyle = tint('#6d6a80'); ctx.fillRect(x - 1, 0, 2, 50); circ(ctx, x, -1, 2, tint('#e0b84f')); ctx.fillStyle = tint(k ? '#6d5fa3' : '#c0392b'); ctx.beginPath(); ctx.moveTo(x + 1, 4); ctx.lineTo(x + 12 + Math.sin(t * 2.5 + k) * 1.5, 7); ctx.lineTo(x + 12 + Math.sin(t * 2.5 + k) * 1.5, 22); ctx.lineTo(x + 6, 19); ctx.lineTo(x + 1, 22); ctx.closePath(); ctx.fill(); star(ctx, x + 6.5, 12, 2.2, '#f2d27a'); });
+      [330, 446].forEach((x) => { ctx.fillStyle = tint('#6d6a80'); ctx.fillRect(x - 1, 0, 2, 50); circ(ctx, x, -1, 2, tint('#e0b84f')); });
       break;
     }
     default: {
+      if (live) break; // the meadow's garden stands still
       // meadow (original hay bales + scarecrow) with a split-rail fence and a veggie patch
       [[320, 40], [352, 58], [390, 36]].forEach(([x, y]) => { ell(ctx, x, y, 13, 9, tint('#e8c465')); ctx.strokeStyle = tint('#c9a13e'); ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(x, y, 9, 6, 0, 0, Math.PI * 2); ctx.stroke(); });
       drawScarecrow(ctx, 420, 40, t, tint);
@@ -153,3 +163,10 @@ function drawScarecrow(ctx, x, y, t, tint) {
   void t;
 }
 
+// One row of barley stalks, origin on the row's ground line (the picture leans in the wind).
+function paintBarley(ctx, { row, col, winter, R, tint }) {
+  ctx.strokeStyle = tint(col); ctx.lineWidth = 0.9; ctx.beginPath();
+  for (let x = 344 + (row % 2) * 3; x < R; x += 5) { ctx.moveTo(x, 0); ctx.lineTo(x, -11); }
+  ctx.stroke();
+  if (!winter) { ctx.fillStyle = tint(col); ctx.beginPath(); for (let x = 344 + (row % 2) * 3; x < R; x += 5) { ctx.moveTo(x + 1.3, -12); ctx.ellipse(x, -12, 1.3, 3, 0, 0, Math.PI * 2); } ctx.fill(); }
+}

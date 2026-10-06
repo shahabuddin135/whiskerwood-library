@@ -2,25 +2,22 @@
 import { L, IX, floorTop } from './layout.js';
 import { SEAT_H } from './roomArt.js';
 import { drawMouse, ell, circ, fillRR, star } from './draw.js';
-import { FURS, CLOTH, HATS } from '../data/visitors.js';
+import { WARDROBE } from '../data/visitors.js';
 import { readTime, spawnInterval } from '../core/economy.js';
 import { glow } from './glow.js';
+import { art } from './sprites.js';
 
 const WALK = 46;
 let seedCounter = 1;
 
 function randomLook() {
-  const f = FURS[Math.floor(Math.random() * FURS.length)];
-  const hat = HATS[Math.floor(Math.random() * HATS.length)];
-  return {
-    ...f,
-    scarf: Math.random() < 0.55 ? CLOTH[Math.floor(Math.random() * CLOTH.length)] : null,
-    vest: Math.random() < 0.3 ? CLOTH[Math.floor(Math.random() * CLOTH.length)] : null,
-    hat, hatCol: CLOTH[Math.floor(Math.random() * CLOTH.length)],
-    glasses: Math.random() < 0.18,
-    s: 0.88 + Math.random() * 0.12,
-  };
+  const w = WARDROBE[Math.floor(Math.random() * WARDROBE.length)];
+  return { ...w, book: undefined, s: 0.88 + Math.random() * 0.12 };
 }
+// Each regular always carries the same colour of book, whichever floor they visit (so the
+// pictures of them reading are shared by every floor; see sprites.js).
+const BOOKS_IN_HAND = ['#b5523b', '#3d7a5a', '#4f7cac', '#8e3b46', '#5b3f8c', '#c9a227'];
+const bookFor = (v) => BOOKS_IN_HAND[(v.look.idx ?? v.seed) % BOOKS_IN_HAND.length];
 
 export class Visitor {
   constructor(sim, seat, look = randomLook(), special = null) {
@@ -106,7 +103,7 @@ export class RoomSim {
       this.seatTaken[k] = true;
       v.state = 'read'; v.alpha = 1; v.x = L.seats[k]; v.dir = L.seatFacing[k];
       v.y = L.laneBack - (SEAT_H[def.seat] || 15);
-      v.book = def.books[Math.floor(Math.random() * def.books.length)];
+      v.book = bookFor(v);
       v.timer = k === 0 ? 0.8 : 1 + Math.random() * readTime(r);
       this.visitors.push(v);
     }
@@ -159,7 +156,7 @@ export class RoomSim {
           }
           break;
         case 'toShelf':
-          if (v.moveTo(v.target, dt, speed)) { v.state = 'browse'; v.timer = 0.9 + Math.random() * 0.6; v.dir = Math.random() < 0.5 ? 1 : -1; v.book = def.books[Math.floor(Math.random() * def.books.length)]; }
+          if (v.moveTo(v.target, dt, speed)) { v.state = 'browse'; v.timer = 0.9 + Math.random() * 0.6; v.dir = Math.random() < 0.5 ? 1 : -1; v.book = bookFor(v); }
           break;
         case 'browse':
           v.timer -= dt;
@@ -177,7 +174,7 @@ export class RoomSim {
           if (v.req.t <= 0) {
             this.hooks.onRequestFail?.(this, v);
             v.req = null; this.requests = Math.max(0, this.requests - 1);
-            v.book = def.books[0]; v.state = 'toSeat'; v.target = L.seats[v.seat];
+            v.book = bookFor(v); v.state = 'toSeat'; v.target = L.seats[v.seat];
           }
           break;
         case 'toSeat':
@@ -259,11 +256,7 @@ export class RoomSim {
     const x = Math.max(16, Math.min(336, v.x)); const y = v.y - 58 + Math.sin(t * 3) * 1.5;
     const urgent = v.req.t < 4;
     circ(ctx, v.x + 3, v.y - 38, 1.8, '#fff'); circ(ctx, v.x + 6, v.y - 43, 2.6, '#fff');
-    ell(ctx, x, y, 15, 12, '#ffffff');
-    ctx.strokeStyle = urgent ? '#e0605a' : '#e3c48e'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x, y, 15, 12, 0, 0, Math.PI * 2); ctx.stroke();
-    fillRR(ctx, x - 7, y - 6, 9, 11, 1.2, v.req.color); ctx.fillStyle = '#fbf6ea'; ctx.fillRect(x - 5.5, y - 4.5, 1.2, 8);
-    ctx.fillStyle = '#4a3121'; ctx.font = '700 10px "Fredoka",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('?', x + 7, y);
+    art(ctx, `request|${v.req.color}|${urgent ? 1 : 0}`, [-17, -14, 34, 28], paintRequest, [v.req.color, urgent], x, y);
     // timer ring
     ctx.strokeStyle = urgent ? '#e0605a' : '#7cc46b'; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(x, y, 17, -Math.PI / 2, -Math.PI / 2 + (v.req.t / 11) * Math.PI * 2); ctx.stroke();
@@ -329,6 +322,15 @@ export class RoomSim {
     }
     return best;
   }
+}
+
+// The thought bubble itself: "can you find me this book?" (a cached picture; see sprites.js)
+function paintRequest(ctx, [color, urgent]) {
+  ell(ctx, 0, 0, 15, 12, '#ffffff');
+  ctx.strokeStyle = urgent ? '#e0605a' : '#e3c48e'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(0, 0, 15, 12, 0, 0, Math.PI * 2); ctx.stroke();
+  fillRR(ctx, -7, -6, 9, 11, 1.2, color); ctx.fillStyle = '#fbf6ea'; ctx.fillRect(-5.5, -4.5, 1.2, 8);
+  ctx.fillStyle = '#4a3121'; ctx.font = '700 10px "Fredoka",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('?', 7, 0);
 }
 
 export const roomOrigin = (i) => ({ x: IX, y: floorTop(i) });

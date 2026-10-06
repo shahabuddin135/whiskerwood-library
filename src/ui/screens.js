@@ -1,4 +1,5 @@
 // All pop-up screens. Rewarded-ad buttons are always optional and clearly marked with 📺.
+import { playPrologue } from './prologue.js';
 import { openModal, closeModal } from './modals.js';
 import { $, h, ICO, toast, flyTo, bigText, centerOf, haptic } from './dom.js';
 import { ROOMS, BOOKS, RARITY, DECOR } from '../data/rooms.js';
@@ -177,12 +178,12 @@ export class Screens {
       onOpen: (hd) => {
         const tick = () => {
           const rem = g.buildRemaining(i);
-          if (!g.s.rooms[i].buildEnd) { clearInterval(iv); closeModal(); return; }
+          if (hd.closed || !g.s.rooms[i].buildEnd) { clearInterval(iv); hd.close(); return; }
           body.querySelector('[data-t]').textContent = `⏳ ${fmtTime(rem)}`;
           const c = hd.el.querySelector('[data-c]'); if (c) c.textContent = cheeseCost();
           const ad = hd.el.querySelector('.btn.ad'); if (ad && !ad.disabled) ad.innerHTML = rem <= 120 ? 'Finish now' : 'Halve the time';
         };
-        tick(); iv = setInterval(tick, 250);
+        iv = setInterval(tick, 250); tick(); // timer first, so closing straight away also stops it
       },
       onClose: () => clearInterval(iv),
     });
@@ -708,7 +709,8 @@ export class Screens {
         </div></div>` : ''}
       <div class="credits">
         <b>Whiskerwood Library</b> v${CONFIG.version} · ads: ${Ads.provider}<br>
-        Music: original waltz composed for this game, performed live by Web Audio synths.<br>
+        Music: original pieces composed for this game, performed live by Web Audio synths.<br>
+      Storyteller voice: Kokoro (open text-to-speech, Apache 2.0).<br>
         <a href="${CONFIG.privacyUrl}" target="_blank" rel="noopener">Privacy policy</a><br>
         Sound effects: <a href="https://kenney.nl" target="_blank" rel="noopener">Kenney.nl</a> (CC0) — RPG Audio &amp; Interface Sounds.<br>
         Fonts: Fredoka &amp; Kalam (SIL Open Font License).<br>
@@ -745,8 +747,13 @@ export class Screens {
     });
     body.querySelector('[data-replay]').addEventListener('click', () => {
       closeModal();
-      g.s.story.seen = g.s.story.seen.filter((id) => id !== 'intro');
-      this.ui.story.play('intro');
+      // the storybook again, then Pip's welcome
+      this.ui.cinematic = true;
+      playPrologue({ settings: st }).then(() => {
+        this.ui.cinematic = false;
+        g.s.story.seen = g.s.story.seen.filter((id) => id !== 'intro');
+        this.ui.story.play('intro');
+      });
     });
     body.querySelector('[data-reset]').addEventListener('click', () => {
       openModal({

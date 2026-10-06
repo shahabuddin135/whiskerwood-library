@@ -438,12 +438,17 @@ src/
                        branch buildings (buildings.js) and gardens (landscape.js), festival decor (festive.js),
                        scenery, seasons & weather (ambient.js), events.js, chatter.js, visitor AI, particles,
                        wings (wingArt.js, wingSim.js), the maze (deepArt.js), Mole City + the lift (moleArt.js),
-                       creatures (moles, hamsters, Umber, fossils), glow sprites, adaptive quality (quality.js)
-  ui/                  HUD, quick tasks, upgrade sheet, dialogs, story overlay + portraits, tutorial pointer
-  audio/               Web Audio setup, procedural waltz (music.js), sound effects (sfx.js)
+                       creatures (moles, hamsters, Umber, fossils), glow sprites, adaptive quality (quality.js),
+                       sprites.js: characters and scenery drawn once into cached pictures (a sprite atlas)
+                       and stamped every frame, which is what keeps phones smooth
+  ui/                  HUD, quick tasks, upgrade sheet, dialogs, story overlay + portraits, tutorial pointer,
+                       the storybook prologue (prologue.js), features appearing as you grow (reveal.js)
+  audio/               Web Audio setup, the songbook (music.js + songs.js), sound effects (sfx.js),
+                       the characters' babbling voices (voices.js)
   ads/ads.js           AdMob / H5 / mock ad providers
-public/audio/          Kenney CC0 sound effects (mp3)
+public/audio/          Kenney CC0 sound effects (mp3); prologue/ holds the storybook narration
 scripts/               balance simulator, tuner, logic smoke tests, store-asset generator,
+                       narrate-prologue.py (re-voices the prologue with Kokoro after a text change),
                        build-site.mjs (the website) and gradle.mjs (Android builds on any OS)
 site/                  the website: pages, styles, images and trailers (see "Website" above)
 ad/                    the two video ads, rendered from the real game (see ad/README.md)
@@ -452,7 +457,8 @@ android/               Capacitor Android project (AdMob App ID, signing config, 
 ```
 
 ## Credits & licences
-- **Music:** original waltz composed for this game and synthesized live; no external files. You can drop in your own tracks via `CONFIG.musicFiles`.
+- **Music:** six original pieces composed for this game and synthesized live (day, night, underground, festivals, rain, winter); no external files. You can drop in your own tracks via `CONFIG.musicFiles`.
+- **Storyteller voice:** the prologue narration is made with [Kokoro](https://github.com/hexgrad/kokoro) (Apache 2.0) via `scripts/narrate-prologue.py`.
 - **Sound effects:** [Kenney.nl](https://kenney.nl) *RPG Audio* and *Interface Sounds*, CC0 1.0 (see `public/audio/KENNEY_LICENSE.txt`).
 - **Fonts:** Fredoka and Kalam, SIL Open Font License, via Fontsource.
 - **Art:** every mouse, floor and prop is drawn procedurally in `src/world/`.

@@ -1,12 +1,13 @@
 // Seasons, weather and all the little lives around the library.
 import { W, BX0, BX1, FH, floorTop } from './layout.js';
-import { ell, circ, rng, star, drawMouse, fillRR, shade } from './draw.js';
-import { FURS, CLOTH } from '../data/visitors.js';
+import { ell, circ, rng, star, drawMouse, fillRR, shade, drawSwallow } from './draw.js';
+import { WARDROBE } from '../data/visitors.js';
 import { texFill } from './textures.js';
 import { glow } from './glow.js';
 import { WINGS } from '../data/wings.js';
 import { wingX, SIDE } from './wingArt.js';
 import { sfx } from '../audio/sfx.js';
+import { art } from './sprites.js';
 
 export const SEASONS = [
   { key: 'spring', name: 'Spring', icon: '🌸', grass: ['#a3d582', '#7fbb66'], hills: ['#bfe0b4', '#97cd86'], trees: ['#f5b8cb', '#f9d0dc', '#9ccf7a'], flowers: ['#f7a8c4', '#fff3b0', '#ffffff', '#c8a8f0', '#ffb3c7'] },
@@ -21,7 +22,8 @@ export function seasonFor(cal, override = null) {
   const cur = SEASONS[cal.idx];
   const blendSec = Math.min(20, cal.seasonSec * 0.12);
   if (cal.left >= blendSec) return cur;
-  return blendSeason(cur, SEASONS[(cal.idx + 1) % 4], 1 - cal.left / blendSec);
+  // in eight gentle steps: every step repaints the cached scenery, so not every frame
+  return blendSeason(cur, SEASONS[(cal.idx + 1) % 4], Math.ceil((1 - cal.left / blendSec) * 8) / 8);
 }
 
 function blendSeason(a, b, f) {
@@ -125,10 +127,10 @@ export class Ambient {
         const left = this.w.cam.x - 40; const right = this.w.cam.x + this.w.viewW() + 40;
         const fromLeft = Math.random() < 0.5;
         const dir = fromLeft ? 1 : -1;
-        const f = pick(FURS);
+        const w = pick(WARDROBE); const winter = season.key === 'winter';
         this.walkers.push({
           x: fromLeft ? Math.min(left, door - 60) : Math.max(right, door + 60), y: rand(12, 22), dir, t: Math.random() * 5, alpha: 1, door,
-          look: { ...f, scarf: season.key === 'winter' || Math.random() < 0.4 ? pick(CLOTH) : null, hat: season.key === 'winter' ? 'bobble' : Math.random() < 0.3 ? pick(['beret', 'cap', 'flower', 'bow']) : null, hatCol: pick(CLOTH), book: Math.random() < 0.5 ? pick(CLOTH) : null },
+          look: { fur: w.fur, belly: w.belly, scarf: winter ? w.scarf || w.hatCol : w.scarf, hat: winter ? 'bobble' : w.hat, hatCol: w.hatCol, book: w.book },
         });
       }
     }
@@ -178,12 +180,11 @@ export class Ambient {
   }
 
   drawBirds(ctx) {
-    ctx.strokeStyle = 'rgba(58,52,64,0.7)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    // a little flock of swallows in a V
     for (const b of this.birds) {
       for (let k = 0; k < b.n; k++) {
         const bx = b.x - b.dir * Math.abs(k - (b.n >> 1)) * 16 - b.dir * k * 2; const by = b.y + Math.abs(k - (b.n >> 1)) * 9;
-        const flap = 3 * Math.sin(this.t * 10 + k);
-        ctx.beginPath(); ctx.moveTo(bx - 5, by - flap); ctx.quadraticCurveTo(bx - 2, by - 1, bx, by); ctx.quadraticCurveTo(bx + 2, by - 1, bx + 5, by - flap); ctx.stroke();
+        drawSwallow(ctx, bx, by, this.t + k * 0.37, b.dir, 1.25);
       }
     }
     for (const s of this.stars) {
@@ -198,12 +199,19 @@ export class Ambient {
 
   /* ---------------- world-space: behind the building ---------------- */
   drawBack(ctx, v, tod, season) {
-    const tint = (hex) => mixDark(hex, tod.dark);
     // two big old trees hugging the library (each branch has its own kind)
     const scene = this.w.game.branch().scene;
-    const tree = scene === 'cove' ? this.drawPalm : scene === 'pond' ? this.drawWillow : scene === 'castle' ? this.drawPine : scene === 'windmill' ? this.drawPoplar : this.drawTree;
-    tree.call(this, ctx, BX0 - 10, 0, 1.15, season, tint, 11);
-    tree.call(this, ctx, BX1 + 12, 0, 0.95, season, tint, 23);
+    const kind = scene === 'cove' ? 'palm' : scene === 'pond' ? 'willow' : scene === 'castle' ? 'pine' : scene === 'windmill' ? 'poplar' : 'tree';
+    const darkQ = Math.round(tod.dark * 20) / 20;
+    this.bigTree(ctx, kind, BX0 - 10, 1.15, season, darkQ, 11);
+    this.bigTree(ctx, kind, BX1 + 12, 0.95, season, darkQ, 23);
+  }
+  // Each tree is painted once into a picture and leaned from its roots as it sways.
+  bigTree(ctx, kind, x, s, season, darkQ, seed) {
+    const T = TREES[kind];
+    const sway = Math.sin(this.t * T.speed + seed) * T.amp;
+    const key = `tree|${kind}|${seed}|${season.key}|${season.trees.join()}|${darkQ}`;
+    art(ctx, key, T.box, paintTree, { self: this, fn: this[T.fn], season, darkQ, seed }, x, 0, s, -sway / 220);
   }
 
   drawPalm(ctx, x, y, s, season, tint, seed) {
@@ -303,16 +311,9 @@ export class Ambient {
     const winter = season.key === 'winter';
     const tint = (hex) => mixDark(hex, tod.dark * 0.9);
     // seasonal props
-    if (season.key === 'spring') for (let k = 0; k < 7; k++) { const x = 296 + k * 7; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 84); ctx.lineTo(x, 74); ctx.stroke(); ell(ctx, x, 72, 2.6, 3.6, tint(['#f28b82', '#ffd24a', '#f7a8c4', '#c8a8f0'][k % 4])); }
-    if (season.key === 'summer') for (let k = 0; k < 3; k++) { const x = 300 + k * 14; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, 86); ctx.lineTo(x + Math.sin(t + k) * 1.5, 58); ctx.stroke(); for (let p = 0; p < 10; p++) { const a = (p / 10) * Math.PI * 2; ell(ctx, x + Math.cos(a) * 5 + Math.sin(t + k) * 1.5, 56 + Math.sin(a) * 5, 2.6, 1.3, tint('#ffd24a'), a); } circ(ctx, x + Math.sin(t + k) * 1.5, 56, 3.4, tint('#7a4b2e')); }
-    if (season.key === 'autumn') [[304, 80, 7], [320, 84, 5], [290, 86, 4]].forEach(([x, y, r]) => { ell(ctx, x, y, r * 1.3, r, tint('#e8913a')); ctx.strokeStyle = tint('#c9731f'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.ellipse(x, y, r * 0.5, r, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = tint('#5b7f4d'); ctx.fillRect(x - 0.8, y - r - 3, 1.6, 3); });
-    if (winter) {
-      circ(ctx, 308, 76, 10, '#fbfdff'); circ(ctx, 308, 60, 7.5, '#fbfdff'); circ(ctx, 308, 49, 5.5, '#fbfdff');
-      circ(ctx, 306, 48, 0.9, '#1d1b24'); circ(ctx, 310.5, 48, 0.9, '#1d1b24');
-      ctx.fillStyle = '#f28c28'; ctx.beginPath(); ctx.moveTo(308, 50); ctx.lineTo(314, 51); ctx.lineTo(308, 52); ctx.fill();
-      fillRR(ctx, 301, 53.5, 14, 2.6, 1.2, '#c0504d'); ctx.fillStyle = '#3a3440'; ctx.fillRect(303.5, 38, 9, 6); ctx.fillRect(301.5, 43.5, 13, 1.6);
-      ctx.strokeStyle = '#6b4a34'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(300, 60); ctx.lineTo(292, 54); ctx.moveTo(316, 60); ctx.lineTo(324, 53); ctx.stroke();
-    }
+    const darkQ = Math.round(tod.dark * 18) / 20; // the garden darkens a little less than the sky
+    if (season.key === 'summer') for (let k = 0; k < 3; k++) art(ctx, `sunflower|${darkQ}`, SUNFLOWER_BOX, paintSunflower, darkQ, 300 + k * 14, 86, 1, -Math.sin(t + k) * 0.05);
+    else if (season.key === 'spring' || season.key === 'autumn' || winter) art(ctx, `bed|${season.key}|${darkQ}`, BED_BOX, paintBed, { key: season.key, darkQ });
     // puddles in the rain
     if (this.weather.kind === 'rain' && this.weather.intensity > 0.3) {
       [[214, 30], [228, 62], [60, 80], [360, 20]].forEach(([x, y], k) => {
@@ -330,18 +331,12 @@ export class Ambient {
       const dx = this.ducks.x; const dir = this.ducks.dir;
       [[0, 1], [-11, 0.62], [-19, 0.62]].forEach(([off, s], k) => {
         const x = dx + off * dir; const y = 47 + k * 2 + Math.sin(this.t * 2 + k) * 0.7;
-        ctx.save(); ctx.translate(x, y); ctx.scale(dir * s, s);
-        ell(ctx, 0, 0, 7, 3.6, k ? tint('#ffe066') : tint('#fbf6ea')); circ(ctx, 5, -4, 3, k ? tint('#ffe066') : tint('#fbf6ea'));
-        ctx.fillStyle = '#f2a13e'; ctx.fillRect(7.5, -4.5, 3.2, 1.6); circ(ctx, 6, -4.8, 0.6, '#1d1b24');
-        ctx.restore();
+        art(ctx, `duck|${k ? 1 : 0}|${darkQ}`, DUCK_BOX, paintDuck, { chick: k > 0, darkQ }, x, y, dir * s);
       });
       for (const f of this.frogs) {
         let x = f.x, y = f.y;
         if (f.jump) { const k = f.jump.t; x = f.jump.fx + (f.jump.tx - f.jump.fx) * k; y = f.jump.fy + (f.jump.ty - f.jump.fy) * k - Math.sin(k * Math.PI) * 16; }
-        ell(ctx, x, y - 2.5, 5, 3.4, tint('#5fae4f')); ell(ctx, x, y - 1.5, 3.4, 1.8, tint('#bfe39a'));
-        circ(ctx, x - 2.4, y - 5.4, 1.7, tint('#5fae4f')); circ(ctx, x + 2.4, y - 5.4, 1.7, tint('#5fae4f'));
-        circ(ctx, x - 2.4, y - 5.6, 0.9, '#fff'); circ(ctx, x + 2.4, y - 5.6, 0.9, '#fff');
-        circ(ctx, x - 2.3, y - 5.5, 0.45, '#1d1b24'); circ(ctx, x + 2.5, y - 5.5, 0.45, '#1d1b24');
+        art(ctx, `frog|${darkQ}`, FROG_BOX, paintFrog, darkQ, x, y);
       }
     }
     // butterflies by day in spring/summer
@@ -356,14 +351,11 @@ export class Ambient {
     }
     // snail on the foundation stones
     const sn = this.snail;
-    ctx.save(); ctx.translate(sn.x, 7); ctx.scale(sn.dir, 1);
-    ell(ctx, 0, 0, 5, 1.6, tint('#b8aca1')); circ(ctx, -1, -3, 3.4, tint('#c98b52')); ctx.strokeStyle = tint('#8a5a3a'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(-1, -3, 1.6, 0, Math.PI * 1.6); ctx.stroke();
-    ctx.strokeStyle = tint('#b8aca1'); ctx.beginPath(); ctx.moveTo(4, -1); ctx.lineTo(5.5, -4.5); ctx.stroke();
-    ctx.restore();
+    art(ctx, `snail|${darkQ}`, SNAIL_BOX, paintSnail, darkQ, sn.x, 7, sn.dir);
     // passers-by heading for the door
     const umbrella = this.weather.kind === 'rain' && this.weather.intensity > 0.3;
     for (const m of this.walkers) {
-      drawMouse(ctx, m.x, m.y, { ...m.look, dir: m.dir, pose: 'walk', t: m.t, s: 0.72, alpha: m.alpha, umbrella: umbrella ? CLOTH[Math.floor(m.x * 7) % CLOTH.length] : null });
+      drawMouse(ctx, m.x, m.y, { ...m.look, dir: m.dir, pose: 'walk', t: m.t, s: 0.72, alpha: m.alpha, umbrella: umbrella ? m.look.hatCol : null });
     }
     // postmouse on a bicycle
     if (this.cyclist) {
@@ -381,38 +373,27 @@ export class Ambient {
   /* ---------------- world-space: on the building ---------------- */
   drawExterior(ctx, v, tod, season, topIndex, builtCount) {
     const t = this.t;
-    const leaf = season.key === 'autumn' ? ['#d9632d', '#e8913a', '#b5523b'] : season.key === 'winter' ? ['#8a6a4c'] : season.key === 'spring' ? ['#7fc063', '#9ccf7a', '#f5b8cb'] : ['#4f8a44', '#5e9c55', '#6ea35a'];
-    const ivyTop = Math.max(floorTop(Math.max(0, builtCount - 1)) + 60, v.top - 20);
-    const ivyBot = Math.min(0, v.bottom + 20);
-    if (ivyBot > ivyTop) [[BX0 + 3, 11], [BX1 - 3, 29]].forEach(([x, seed]) => {
-      ctx.strokeStyle = mixDark('#5b7f4d', tod.dark); ctx.lineWidth = 1.2;
-      const y0 = Math.floor(ivyBot / 12) * 12;
-      ctx.beginPath(); ctx.moveTo(x + Math.sin(y0 * 0.08 + seed) * 3, y0);
-      for (let y = y0; y > ivyTop; y -= 12) ctx.lineTo(x + Math.sin(y * 0.08 + seed) * 3, y);
-      ctx.stroke();
-      // leaves are placed by position, so the ivy looks the same wherever you scroll
-      const cols = leaf.map((c) => mixDark(c, tod.dark * 0.9));
-      for (let y = Math.floor(ivyBot / 6.5) * 6.5 - 6; y > ivyTop; y -= 6.5) {
-        const R = rng(seed * 997 + Math.round(-y * 10));
-        if (season.bare && R() < 0.6) continue;
-        const lx = x + Math.sin(y * 0.08 + seed) * 3 + (R() - 0.5) * 9;
-        ell(ctx, lx, y + (R() - 0.5) * 4, 3 + R() * 1.4, 2 + R(), cols[Math.floor(R() * cols.length)], R() * 3);
+    const darkQ = Math.round(tod.dark * 20) / 20;
+    // ivy up both sides of the tower, one picture per side from the ground to the top floor
+    const top = floorTop(Math.max(0, builtCount - 1)) + 60;
+    if (top < 0 && v.bottom > top && v.top < 0) {
+      for (const [x, seed] of [[BX0 + 3, 11], [BX1 - 3, 29]]) {
+        art(ctx, `ivy|${x}|${top}|${season.key}|${darkQ}`, [x - 10, top - 6, 20, 10 - top], paintIvy, { x, seed, top, season, darkQ });
       }
-    });
+    }
     // lanterns at every floor
+    const lit = tod.dark > 0.3;
     for (let i = 0; i <= topIndex; i++) {
       const y = floorTop(i) + 50;
       if (y < v.top - 40 || y > v.bottom + 40) continue; // only the lanterns you can see
-      [[BX0 - 7, 1], [BX1 + 7, -1]].forEach(([x, side]) => {
-        ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + side * 7, y - 12); ctx.lineTo(x, y - 12); ctx.lineTo(x, y - 8); ctx.stroke();
-        fillRR(ctx, x - 3.5, y - 8, 7, 10, 1.5, '#3a3440');
-        ctx.fillStyle = tod.dark > 0.3 ? '#ffe39a' : '#f3ead3'; ctx.fillRect(x - 2.3, y - 6.5, 4.6, 7);
-        if (tod.dark > 0.3) {
+      for (const [x, side] of [[BX0 - 7, 1], [BX1 + 7, -1]]) {
+        art(ctx, `lantern|${lit ? 1 : 0}|${side}`, LANTERN_BOX, paintLantern, lit ? side * 2 : side, x, y);
+        if (lit) {
           ctx.globalCompositeOperation = 'lighter';
           glow(ctx, x, y - 3, 26, '255,214,130', 0.5 * tod.dark + Math.sin(t * 7 + i) * 0.03);
           ctx.globalCompositeOperation = 'source-over';
         }
-      });
+      }
     }
   }
 
@@ -437,12 +418,14 @@ export class Ambient {
     if (snowing) {
       const count = Math.floor(this.flakes.length * (wx.kind === 'snow' ? Math.max(0.3, wx.intensity) : 0.25));
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath(); // every flake in one shape: one draw for the GPU instead of eighty
       for (let k = 0; k < count; k++) {
         const f = this.flakes[k];
         f.y = (f.y + 0.0016 * f.s) % 1;
         const x = ((f.x + Math.sin(t * 0.8 + f.p) * 0.02) % 1 + 1) % 1 * Wd;
-        ctx.beginPath(); ctx.arc(x, f.y * H, f.r, 0, Math.PI * 2); ctx.fill();
+        ctx.moveTo(x + f.r, f.y * H); ctx.arc(x, f.y * H, f.r, 0, Math.PI * 2);
       }
+      ctx.fill();
     }
     if ((season.key === 'spring' || season.key === 'autumn') && wx.kind !== 'rain') {
       const cols = season.key === 'spring' ? ['#f9c6d6', '#ffffff', '#f5b8cb'] : ['#e8913a', '#d9632d', '#f2c14e'];
@@ -497,4 +480,82 @@ function mixDark(hex, dark) {
   const k = Math.min(0.75, dark * 1.05);
   const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
   return `rgb(${Math.round(r + (27 - r) * k)},${Math.round(g + (36 - g) * k)},${Math.round(b + (71 - b) * k)})`;
+}
+
+/* ---------------- painters for the cached pictures (see sprites.js) ---------------- */
+// [x, y, w, h] each picture covers around its origin, and the tree kinds' sway.
+const TREES = {
+  tree: { fn: 'drawTree', box: [-100, -290, 200, 294], speed: 0.8, amp: 2 },
+  palm: { fn: 'drawPalm', box: [-72, -222, 144, 226], speed: 0.9, amp: 3 },
+  willow: { fn: 'drawWillow', box: [-95, -235, 190, 240], speed: 0.7, amp: 3 },
+  pine: { fn: 'drawPine', box: [-64, -252, 128, 256], speed: 0.6, amp: 1.5 },
+  poplar: { fn: 'drawPoplar', box: [-45, -262, 90, 266], speed: 0.8, amp: 2 },
+};
+function paintTree(ctx, a) {
+  const t0 = a.self.t; a.self.t = 0; // painted still: the whole picture sways instead
+  a.fn.call(a.self, ctx, 0, 0, 1, a.season, (hex) => mixDark(hex, a.darkQ), a.seed);
+  a.self.t = t0;
+}
+const IVY_LEAVES = { autumn: ['#d9632d', '#e8913a', '#b5523b'], winter: ['#8a6a4c'], spring: ['#7fc063', '#9ccf7a', '#f5b8cb'], summer: ['#4f8a44', '#5e9c55', '#6ea35a'] };
+function paintIvy(ctx, { x, seed, top, season, darkQ }) {
+  ctx.strokeStyle = mixDark('#5b7f4d', darkQ); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x + Math.sin(seed) * 3, 0);
+  for (let y = 0; y > top; y -= 12) ctx.lineTo(x + Math.sin(y * 0.08 + seed) * 3, y);
+  ctx.stroke();
+  // leaves are placed by position, so the ivy always looks the same
+  const cols = (IVY_LEAVES[season.key] || IVY_LEAVES.summer).map((c) => mixDark(c, darkQ * 0.9));
+  for (let y = -6; y > top; y -= 6.5) {
+    const R = rng(seed * 997 + Math.round(-y * 10));
+    if (season.bare && R() < 0.6) continue;
+    const lx = x + Math.sin(y * 0.08 + seed) * 3 + (R() - 0.5) * 9;
+    ell(ctx, lx, y + (R() - 0.5) * 4, 3 + R() * 1.4, 2 + R(), cols[Math.floor(R() * cols.length)], R() * 3);
+  }
+}
+const LANTERN_BOX = [-9, -15, 18, 19];
+function paintLantern(ctx, a) { // a: which side the bracket is on, doubled when lit
+  const side = Math.sign(a); const lit = Math.abs(a) > 1;
+  ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(side * 7, -12); ctx.lineTo(0, -12); ctx.lineTo(0, -8); ctx.stroke();
+  fillRR(ctx, -3.5, -8, 7, 10, 1.5, '#3a3440');
+  ctx.fillStyle = lit ? '#ffe39a' : '#f3ead3'; ctx.fillRect(-2.3, -6.5, 4.6, 7);
+}
+const SUNFLOWER_BOX = [-10, -40, 20, 42];
+function paintSunflower(ctx, darkQ) {
+  const tint = (hex) => mixDark(hex, darkQ);
+  ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -28); ctx.stroke();
+  for (let p = 0; p < 10; p++) { const a = (p / 10) * Math.PI * 2; ell(ctx, Math.cos(a) * 5, -30 + Math.sin(a) * 5, 2.6, 1.3, tint('#ffd24a'), a); }
+  circ(ctx, 0, -30, 3.4, tint('#7a4b2e'));
+}
+// the flower bed by the path: spring tulips, autumn pumpkins or a winter snowman
+const BED_BOX = [283, 34, 58, 58];
+function paintBed(ctx, { key, darkQ }) {
+  const tint = (hex) => mixDark(hex, darkQ);
+  if (key === 'spring') for (let k = 0; k < 7; k++) { const x = 296 + k * 7; ctx.strokeStyle = tint('#4f8a44'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, 84); ctx.lineTo(x, 74); ctx.stroke(); ell(ctx, x, 72, 2.6, 3.6, tint(['#f28b82', '#ffd24a', '#f7a8c4', '#c8a8f0'][k % 4])); }
+  if (key === 'autumn') [[304, 80, 7], [320, 84, 5], [290, 86, 4]].forEach(([x, y, r]) => { ell(ctx, x, y, r * 1.3, r, tint('#e8913a')); ctx.strokeStyle = tint('#c9731f'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.ellipse(x, y, r * 0.5, r, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = tint('#5b7f4d'); ctx.fillRect(x - 0.8, y - r - 3, 1.6, 3); });
+  if (key === 'winter') {
+    circ(ctx, 308, 76, 10, '#fbfdff'); circ(ctx, 308, 60, 7.5, '#fbfdff'); circ(ctx, 308, 49, 5.5, '#fbfdff');
+    circ(ctx, 306, 48, 0.9, '#1d1b24'); circ(ctx, 310.5, 48, 0.9, '#1d1b24');
+    ctx.fillStyle = '#f28c28'; ctx.beginPath(); ctx.moveTo(308, 50); ctx.lineTo(314, 51); ctx.lineTo(308, 52); ctx.fill();
+    fillRR(ctx, 301, 53.5, 14, 2.6, 1.2, '#c0504d'); ctx.fillStyle = '#3a3440'; ctx.fillRect(303.5, 38, 9, 6); ctx.fillRect(301.5, 43.5, 13, 1.6);
+    ctx.strokeStyle = '#6b4a34'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(300, 60); ctx.lineTo(292, 54); ctx.moveTo(316, 60); ctx.lineTo(324, 53); ctx.stroke();
+  }
+}
+const DUCK_BOX = [-8, -8, 20, 12];
+function paintDuck(ctx, { chick, darkQ }) {
+  const c = mixDark(chick ? '#ffe066' : '#fbf6ea', darkQ);
+  ell(ctx, 0, 0, 7, 3.6, c); circ(ctx, 5, -4, 3, c);
+  ctx.fillStyle = '#f2a13e'; ctx.fillRect(7.5, -4.5, 3.2, 1.6); circ(ctx, 6, -4.8, 0.6, '#1d1b24');
+}
+const FROG_BOX = [-6, -8, 12, 9];
+function paintFrog(ctx, darkQ) {
+  const g = mixDark('#5fae4f', darkQ);
+  ell(ctx, 0, -2.5, 5, 3.4, g); ell(ctx, 0, -1.5, 3.4, 1.8, mixDark('#bfe39a', darkQ));
+  circ(ctx, -2.4, -5.4, 1.7, g); circ(ctx, 2.4, -5.4, 1.7, g);
+  circ(ctx, -2.4, -5.6, 0.9, '#fff'); circ(ctx, 2.4, -5.6, 0.9, '#fff');
+  circ(ctx, -2.3, -5.5, 0.45, '#1d1b24'); circ(ctx, 2.5, -5.5, 0.45, '#1d1b24');
+}
+const SNAIL_BOX = [-6, -8, 13, 10];
+function paintSnail(ctx, darkQ) {
+  const tint = (hex) => mixDark(hex, darkQ);
+  ell(ctx, 0, 0, 5, 1.6, tint('#b8aca1')); circ(ctx, -1, -3, 3.4, tint('#c98b52')); ctx.strokeStyle = tint('#8a5a3a'); ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(-1, -3, 1.6, 0, Math.PI * 1.6); ctx.stroke();
+  ctx.strokeStyle = tint('#b8aca1'); ctx.beginPath(); ctx.moveTo(4, -1); ctx.lineTo(5.5, -4.5); ctx.stroke();
 }

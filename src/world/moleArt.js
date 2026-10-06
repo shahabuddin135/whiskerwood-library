@@ -9,6 +9,7 @@ import { glow } from './glow.js';
 import { CELL_W, CELL_H, DEEP_COLS, DEEP_ROWS, cellX, cellY, cellId, cellKind } from '../data/deep.js';
 import { BIZ_BY_ID, bizTier, LIFT_X, LIFT_ROWS } from '../data/mole.js';
 import { fmtTime } from '../core/format.js';
+import { art } from './sprites.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 const F = CELL_H - 24; // top of the plank floor
@@ -440,57 +441,38 @@ function drawBizGlow(ctx, id, x, y, t, fx) {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-// In front of the shopkeeper: counters, the spa's tub rim, cinema seats; plus little animations.
+// In front of the shopkeeper: counters, the spa's tub rim, cinema seats (one cached picture per
+// shop and set of upgrades), plus little animations drawn live on top.
 function drawBizFront(ctx, id, x, y, t, fx, tier) {
+  const bits = `${fx(0) ? 1 : 0}${fx(1) ? 1 : 0}${fx(2) ? 1 : 0}${fx(3) ? 1 : 0}`;
+  if (id === 'spa') { // mud bubbles go under the tub's front rim
+    const nb = fx(2) ? 6 : 3;
+    for (let k = 0; k < nb; k++) { const u = (t * 0.6 + k / nb) % 1; const bx = 34 + ((k * 37) % 42); circ(ctx, x + bx, y + F - 6 - u * 3, 1 + u * 1.4, `rgba(140,105,75,${0.9 - u * 0.9})`); }
+  }
+  if (id !== 'mushroom' && id !== 'cheese') art(ctx, `bizfront|${id}|${bits}`, [0, 40, CELL_W, CELL_H - 40], paintBizFront, { id, fx: [fx(0), fx(1), fx(2), fx(3)] }, x, y);
   ctx.save(); ctx.translate(x, y);
-  if (id === 'pies' || id === 'jeweller' || id === 'post') {
-    const [x0, x1, col] = id === 'pies' ? [46, 98, '#8a5a3a'] : id === 'jeweller' ? [44, 96, '#3a3a52'] : [58, 100, '#6d6a80'];
-    fillRR(ctx, x0, 99, x1 - x0, 16, 2, col);
-    fillRR(ctx, x0 - 2, 97, x1 - x0 + 4, 3.4, 1.5, shade(col, 0.25));
-    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(x0, 113, x1 - x0, 2);
-    if (id === 'pies') {
-      fillRR(ctx, x0 + 4, 102, x1 - x0 - 8, 9, 1.5, 'rgba(220,240,250,0.35)');
-      [x0 + 12, x0 + 26, x0 + 40].forEach((px, k) => pie(ctx, px, 108, 0.9, ['#d98a3a', '#c05050', '#e8c465'][k]));
-      pie(ctx, x0 + 10, 96.5, 0.9);
-      if (fx(3)) { ctx.fillStyle = '#c9a227'; ctx.fillRect(x1 - 10, 84, 1.2, 13); [96, 90, 85].forEach((ty, k) => { ell(ctx, x1 - 9.4, ty, 6 - k * 1.5, 1.2, '#e8eef4'); circ(ctx, x1 - 11, ty - 1.2, 1.2, '#f5b3d0'); circ(ctx, x1 - 8, ty - 1.2, 1.2, '#e8c465'); }); }
-      // steam off the fresh pie
-      steam(ctx, x0 + 10, 94, t);
-    } else if (id === 'jeweller') {
-      fillRR(ctx, x0 + 3, 101, x1 - x0 - 6, 10, 1.5, 'rgba(200,225,255,0.4)');
-      for (let k = 0; k < 6; k++) { const gx = x0 + 8 + k * 8; circ(ctx, gx, 107, 1.8, ['#6ec1ff', '#e0404f', '#7ce0a0', '#c9a8f0', '#ffd257', '#f5b3d0'][k]); if (Math.sin(t * 3 + k * 1.7) > 0.85) star(ctx, gx + 1, 105.5, 2, '#ffffff'); }
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x0 + 6, 102, 1, 8);
-      if (fx(2)) { ell(ctx, x1 - 8, 91, 4, 5, '#e8e1d8'); fillRR(ctx, x1 - 11, 95, 6, 2, 1, '#c9d6de'); ctx.fillStyle = '#ffd257'; ctx.beginPath(); ctx.moveTo(x1 - 12, 87); ctx.lineTo(x1 - 10, 83); ctx.lineTo(x1 - 8, 86); ctx.lineTo(x1 - 6, 83); ctx.lineTo(x1 - 4, 87); ctx.closePath(); ctx.fill(); circ(ctx, x1 - 8, 85, 0.9, '#e0404f'); }
-    } else {
-      ctx.fillStyle = '#c9a227'; ctx.fillRect(x0 + 2, 103, x1 - x0 - 4, 1);
-      fillRR(ctx, x0 + 6, 92, 10, 5, 1, '#fffaf0'); ctx.fillStyle = '#e0404f'; ctx.fillRect(x0 + 13, 93, 2, 2);
-      if (fx(3)) { fillRR(ctx, x1 - 16, 88, 12, 9, 1, '#6b4128'); for (let k = 0; k < 3; k++) fillRR(ctx, x1 - 14.5 + k * 3.6, 89, 2.6, 3.4, 0.5, ['#e0404f', '#4f7cac', '#7cc46b'][k]); }
-      if (fx(0)) { // a capsule whooshes along the tube every few seconds
-        const u = ((t * 0.35) % 1); if (u < 0.5) { const p = u / 0.5; const cx = p < 0.75 ? -0 + 12 + (78 * p) / 0.75 : 96; const cy = p < 0.75 ? 24 : 24 + ((p - 0.75) / 0.25) * 34; fillRR(ctx, cx - 3, cy - 1.6, 6, 3.2, 1.5, '#e8eef4'); }
-      }
+  if (id === 'pies') steam(ctx, 56, 94, t); // steam off the fresh pie
+  else if (id === 'jeweller') {
+    for (let k = 0; k < 6; k++) if (Math.sin(t * 3 + k * 1.7) > 0.85) star(ctx, 44 + 8 + k * 8 + 1, 105.5, 2, '#ffffff');
+  } else if (id === 'post') {
+    if (fx(0)) { // a capsule whooshes along the tube every few seconds
+      const u = ((t * 0.35) % 1); if (u < 0.5) { const p = u / 0.5; const cx = p < 0.75 ? 12 + (78 * p) / 0.75 : 96; const cy = p < 0.75 ? 24 : 24 + ((p - 0.75) / 0.25) * 34; fillRR(ctx, cx - 3, cy - 1.6, 6, 3.2, 1.5, '#e8eef4'); }
     }
   } else if (id === 'spa') {
-    // mud bubbles, then the tub's front rim over the bathers
-    const nb = fx(2) ? 6 : 3;
-    for (let k = 0; k < nb; k++) { const u = (t * 0.6 + k / nb) % 1; const bx = 34 + ((k * 37) % 42); circ(ctx, bx, F - 6 - u * 3, 1 + u * 1.4, `rgba(140,105,75,${0.9 - u * 0.9})`); }
-    ctx.fillStyle = '#e8eef4'; ctx.beginPath(); ctx.moveTo(24, F - 6); ctx.quadraticCurveTo(24, F + 8, 40, F + 8); ctx.lineTo(68, F + 8); ctx.quadraticCurveTo(84, F + 8, 84, F - 6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(30, F - 4, 48, 1.2);
-    ctx.fillStyle = '#c9a227'; ctx.fillRect(28, F + 8, 3, 3); ctx.fillRect(77, F + 8, 3, 3);
     if (fx(3)) { const u = (t * 1.4) % 1; ctx.strokeStyle = 'rgba(190,225,255,0.8)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(22, F - 22); ctx.quadraticCurveTo(16, F - 26 + u, 14, F - 6); ctx.moveTo(22, F - 22); ctx.quadraticCurveTo(28, F - 26 + u, 30, F - 6); ctx.stroke(); }
   } else if (id === 'cinema') {
-    // the film: a glow-worm chasing a mole across the screen, then back again
+    // the film: a glow-worm chasing a mole across the screen, then back again (kept inside the screen)
     const u = (t * 0.12) % 1; const run = u < 0.5 ? u * 2 : (1 - u) * 2; const d = u < 0.5 ? 1 : -1;
-    ctx.save(); ctx.beginPath(); ctx.rect(30, 40, 74, 42); ctx.clip();
-    ctx.fillStyle = 'rgba(40,30,50,0.55)';
-    const mx = 30 + run * 74; ell(ctx, mx, 72, 7, 6, null); ctx.fill(); ell(ctx, mx + d * 7, 69, 4, 3.4, null); ctx.fill();
-    const wx = mx - d * 22; for (let k = 0; k < 4; k++) { ell(ctx, wx - d * k * 3.4, 74 + Math.sin(t * 8 + k) * 1.5, 2.2, 1.8, null); ctx.fill(); }
-    ctx.restore();
-    // seats in front of the audience
-    const seat = fx(1) ? '#9a2a38' : '#8a5a3a';
-    for (const sx of [52, 72, 92]) { fillRR(ctx, sx - 8, F - 4, 16, 12, 3, seat); fillRR(ctx, sx - 9, F + 6, 18, 3, 1.5, shade(seat, -0.2)); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx - 6, F - 3, 12, 1); }
+    ctx.fillStyle = 'rgba(40,30,50,0.55)'; ctx.beginPath();
+    const mx = 44 + run * 46;
+    ctx.moveTo(mx + 7, 72); ctx.ellipse(mx, 72, 7, 6, 0, 0, Math.PI * 2);
+    ctx.moveTo(mx + d * 7 + 4, 69); ctx.ellipse(mx + d * 7, 69, 4, 3.4, 0, 0, Math.PI * 2);
+    const wx = mx - d * 22;
+    for (let k = 0; k < 4; k++) { const ex = wx - d * k * 3.4; if (ex < 32 || ex > 102) continue; const ey = 74 + Math.sin(t * 8 + k) * 1.5; ctx.moveTo(ex + 2.2, ey); ctx.ellipse(ex, ey, 2.2, 1.8, 0, 0, Math.PI * 2); }
+    ctx.fill();
     if (fx(0)) for (let k = 0; k < 3; k++) { const u2 = (t * 0.9 + k / 3) % 1; circ(ctx, 18 + k * 3, F - 26 - u2 * 6, 1.3, `rgba(255,246,214,${1 - u2})`); }
   } else if (id === 'tea') {
-    // low tables with cups
-    for (const tx of [45, 96]) { fillRR(ctx, tx - 9, F + 1, 18, 3, 1.5, '#6b4128'); ctx.fillStyle = '#4a2e1c'; ctx.fillRect(tx - 7, F + 4, 2, 5); ctx.fillRect(tx + 5, F + 4, 2, 5); fillRR(ctx, tx - 3, F - 2.5, 4, 3.5, 1, '#fffaf0'); steam(ctx, tx - 1, F - 4, t + tx); }
+    for (const tx of [45, 96]) steam(ctx, tx - 1, F - 4, t + tx);
     if (fx(0)) steam(ctx, 27, F - 22, t * 1.3);
   } else if (id === 'mushroom') {
     if (fx(3)) steam(ctx, 128, F - 20, t);
@@ -501,13 +483,46 @@ function drawBizFront(ctx, id, x, y, t, fx, tier) {
   void tier;
   ctx.restore();
 }
+function paintBizFront(ctx, { id, fx: FX }) {
+  const fx = (k) => FX[k];
+  if (id === 'pies' || id === 'jeweller' || id === 'post') {
+    const [x0, x1, col] = id === 'pies' ? [46, 98, '#8a5a3a'] : id === 'jeweller' ? [44, 96, '#3a3a52'] : [58, 100, '#6d6a80'];
+    fillRR(ctx, x0, 99, x1 - x0, 16, 2, col);
+    fillRR(ctx, x0 - 2, 97, x1 - x0 + 4, 3.4, 1.5, shade(col, 0.25));
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(x0, 113, x1 - x0, 2);
+    if (id === 'pies') {
+      fillRR(ctx, x0 + 4, 102, x1 - x0 - 8, 9, 1.5, 'rgba(220,240,250,0.35)');
+      [x0 + 12, x0 + 26, x0 + 40].forEach((px, k) => pie(ctx, px, 108, 0.9, ['#d98a3a', '#c05050', '#e8c465'][k]));
+      pie(ctx, x0 + 10, 96.5, 0.9);
+      if (fx(3)) { ctx.fillStyle = '#c9a227'; ctx.fillRect(x1 - 10, 84, 1.2, 13); [96, 90, 85].forEach((ty, k) => { ell(ctx, x1 - 9.4, ty, 6 - k * 1.5, 1.2, '#e8eef4'); circ(ctx, x1 - 11, ty - 1.2, 1.2, '#f5b3d0'); circ(ctx, x1 - 8, ty - 1.2, 1.2, '#e8c465'); }); }
+    } else if (id === 'jeweller') {
+      fillRR(ctx, x0 + 3, 101, x1 - x0 - 6, 10, 1.5, 'rgba(200,225,255,0.4)');
+      for (let k = 0; k < 6; k++) circ(ctx, x0 + 8 + k * 8, 107, 1.8, ['#6ec1ff', '#e0404f', '#7ce0a0', '#c9a8f0', '#ffd257', '#f5b3d0'][k]);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x0 + 6, 102, 1, 8);
+      if (fx(2)) { ell(ctx, x1 - 8, 91, 4, 5, '#e8e1d8'); fillRR(ctx, x1 - 11, 95, 6, 2, 1, '#c9d6de'); ctx.fillStyle = '#ffd257'; ctx.beginPath(); ctx.moveTo(x1 - 12, 87); ctx.lineTo(x1 - 10, 83); ctx.lineTo(x1 - 8, 86); ctx.lineTo(x1 - 6, 83); ctx.lineTo(x1 - 4, 87); ctx.closePath(); ctx.fill(); circ(ctx, x1 - 8, 85, 0.9, '#e0404f'); }
+    } else {
+      ctx.fillStyle = '#c9a227'; ctx.fillRect(x0 + 2, 103, x1 - x0 - 4, 1);
+      fillRR(ctx, x0 + 6, 92, 10, 5, 1, '#fffaf0'); ctx.fillStyle = '#e0404f'; ctx.fillRect(x0 + 13, 93, 2, 2);
+      if (fx(3)) { fillRR(ctx, x1 - 16, 88, 12, 9, 1, '#6b4128'); for (let k = 0; k < 3; k++) fillRR(ctx, x1 - 14.5 + k * 3.6, 89, 2.6, 3.4, 0.5, ['#e0404f', '#4f7cac', '#7cc46b'][k]); }
+    }
+  } else if (id === 'spa') {
+    ctx.fillStyle = '#e8eef4'; ctx.beginPath(); ctx.moveTo(24, F - 6); ctx.quadraticCurveTo(24, F + 8, 40, F + 8); ctx.lineTo(68, F + 8); ctx.quadraticCurveTo(84, F + 8, 84, F - 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(30, F - 4, 48, 1.2);
+    ctx.fillStyle = '#c9a227'; ctx.fillRect(28, F + 8, 3, 3); ctx.fillRect(77, F + 8, 3, 3);
+  } else if (id === 'cinema') {
+    const seat = fx(1) ? '#9a2a38' : '#8a5a3a';
+    for (const sx of [52, 72, 92]) { fillRR(ctx, sx - 8, F - 4, 16, 12, 3, seat); fillRR(ctx, sx - 9, F + 6, 18, 3, 1.5, shade(seat, -0.2)); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx - 6, F - 3, 12, 1); }
+  } else if (id === 'tea') {
+    for (const tx of [45, 96]) { fillRR(ctx, tx - 9, F + 1, 18, 3, 1.5, '#6b4128'); ctx.fillStyle = '#4a2e1c'; ctx.fillRect(tx - 7, F + 4, 2, 5); ctx.fillRect(tx + 5, F + 4, 2, 5); fillRR(ctx, tx - 3, F - 2.5, 4, 3.5, 1, '#fffaf0'); }
+  }
+}
 function steam(ctx, x, y, t) {
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 0.8; ctx.lineCap = 'round'; ctx.beginPath();
   for (let k = 0; k < 2; k++) {
     const u = (t * 0.5 + k * 0.5) % 1;
-    ctx.globalAlpha = 1 - u; ctx.beginPath(); ctx.moveTo(x + k * 2.4, y - u * 8); ctx.quadraticCurveTo(x + k * 2.4 + 2, y - u * 8 - 3, x + k * 2.4, y - u * 8 - 6); ctx.stroke();
+    ctx.moveTo(x + k * 2.4, y - u * 8); ctx.quadraticCurveTo(x + k * 2.4 + 2, y - u * 8 - 3, x + k * 2.4, y - u * 8 - 6);
   }
-  ctx.globalAlpha = 1;
+  ctx.stroke();
 }
 
 function drawBuildingLive(ctx, b, x, y, t, rem) {
@@ -632,11 +647,15 @@ export function drawLift(ctx, view, t, lift, tint = (c) => c, dark = 0) {
   for (let i = 2; i < ys.length; i++) {
     const ly = ys[i]; if (ly < view.top - 10 || ly - 40 > view.bottom) continue;
     const here = Math.abs(cy - ly) < 1;
-    fillRR(ctx, x - h - 2, ly - 1, LIFT_W + 4, 4, 1, '#8a5a3a'); ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(x - h - 2, ly - 1, LIFT_W + 4, 0.8);
-    circ(ctx, x, ly - 38, 2, here ? '#ffe07a' : '#6a5a4a');
+    art(ctx, here ? 'landing1' : 'landing0', [-h - 3, -41, LIFT_W + 6, 45], paintLanding, here, x, ly);
     if (here) { ctx.globalCompositeOperation = 'lighter'; glow(ctx, x, ly - 38, 10, '255,220,120', 0.6); ctx.globalCompositeOperation = 'source-over'; }
-    if (!here) gate(ctx, x, ly, 30);
   }
+}
+function paintLanding(ctx, here) {
+  const h = LIFT_W / 2;
+  fillRR(ctx, -h - 2, -1, LIFT_W + 4, 4, 1, '#8a5a3a'); ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(-h - 2, -1, LIFT_W + 4, 0.8);
+  circ(ctx, 0, -38, 2, here ? '#ffe07a' : '#6a5a4a');
+  if (!here) gate(ctx, 0, 0, 30);
 }
 function gate(ctx, x, ly, hgt) {
   const h = LIFT_W / 2;
@@ -644,21 +663,31 @@ function gate(ctx, x, ly, hgt) {
   for (let k = 0; k <= 6; k++) { const gx = x - h + (k / 6) * LIFT_W; ctx.moveTo(gx, ly - hgt); ctx.lineTo(gx, ly - 1); }
   ctx.moveTo(x - h, ly - hgt); ctx.lineTo(x + h, ly - 1); ctx.moveTo(x + h, ly - hgt); ctx.lineTo(x - h, ly - 1); ctx.stroke();
 }
+const CAR_W = LIFT_W - 4; const CAR_H = 32;
+const CAR_BOX = [-CAR_W / 2 - 3, -CAR_H - 8, CAR_W + 6, CAR_H + 10];
 function drawCar(ctx, x, y, riders, open, t) {
-  const w = LIFT_W - 4; const hgt = 32; const x0 = x - w / 2;
-  fillRR(ctx, x0, y - hgt, w, hgt, 2, '#5a3a22'); fillRR(ctx, x0 + 1.5, y - hgt + 2, w - 3, hgt - 4, 1.5, '#8a6440');
-  ctx.fillStyle = 'rgba(255,240,200,0.18)'; ctx.fillRect(x0 + 2, y - hgt + 2, w - 4, 8);
+  const w = CAR_W; const hgt = CAR_H; const x0 = x - w / 2;
+  art(ctx, 'carBack', CAR_BOX, paintCarBack, 0, x, y);
   riders.forEach((rd, k) => drawCritter(ctx, x0 + 5 + k * 5.5, y - 1.5, rd, 'stand', rd.dir, t + k, 0.62));
-  // brass frame, roof and lamp
-  ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 1.2; rr(ctx, x0, y - hgt, w, hgt, 2); ctx.stroke();
-  ctx.fillStyle = '#b98a3a'; ctx.beginPath(); ctx.moveTo(x0 - 2, y - hgt); ctx.quadraticCurveTo(x, y - hgt - 7, x0 + w + 2, y - hgt); ctx.closePath(); ctx.fill();
-  circ(ctx, x, y - hgt - 4, 1.4, '#ffe9a0');
+  art(ctx, 'carFront', CAR_BOX, paintCarFront, 0, x, y);
   // folding gate: slides aside when the car stops
   ctx.strokeStyle = 'rgba(201,162,39,0.9)'; ctx.lineWidth = 0.7; ctx.beginPath();
   const gw = w * (1 - 0.85 * open);
   for (let k = 0; k <= 5; k++) { const gx = x0 + w - (k / 5) * gw; ctx.moveTo(gx, y - hgt + 2); ctx.lineTo(gx, y - 1); }
   ctx.stroke();
-  fillRR(ctx, x0 - 1, y - 2, w + 2, 3, 1, '#b98a3a');
+}
+function paintCarBack(ctx) {
+  const w = CAR_W; const hgt = CAR_H; const x0 = -w / 2;
+  fillRR(ctx, x0, -hgt, w, hgt, 2, '#5a3a22'); fillRR(ctx, x0 + 1.5, -hgt + 2, w - 3, hgt - 4, 1.5, '#8a6440');
+  ctx.fillStyle = 'rgba(255,240,200,0.18)'; ctx.fillRect(x0 + 2, -hgt + 2, w - 4, 8);
+}
+function paintCarFront(ctx) {
+  const w = CAR_W; const hgt = CAR_H; const x0 = -w / 2;
+  // brass frame, roof, lamp and floor lip
+  ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 1.2; rr(ctx, x0, -hgt, w, hgt, 2); ctx.stroke();
+  ctx.fillStyle = '#b98a3a'; ctx.beginPath(); ctx.moveTo(x0 - 2, -hgt); ctx.quadraticCurveTo(0, -hgt - 7, x0 + w + 2, -hgt); ctx.closePath(); ctx.fill();
+  circ(ctx, 0, -hgt - 4, 1.4, '#ffe9a0');
+  fillRR(ctx, x0 - 1, -2, w + 2, 3, 1, '#b98a3a');
 }
 
 /* ---- the lift house on the lawn ---- */
@@ -676,6 +705,20 @@ function drawHouseBack(ctx, tint) {
 }
 function drawHouseFront(ctx, t, cy, dwellU, trip, tint, dark) {
   const x = LIFT_X; const here = Math.abs(cy - HB) < 1;
+  // the house itself is one picture for the light of the hour
+  const darkQ = Math.round(dark * 20) / 20;
+  art(ctx, `liftHouse|${darkQ}`, [LIFT_X - 34, -1, 68, HB + 9], paintHouseFront, { tint, dark }, 0, 0);
+  // the big wheel turns as the car moves
+  const turn = cy * 0.12; ctx.strokeStyle = tint('#5a3a1a'); ctx.lineWidth = 0.8; ctx.beginPath();
+  for (let k = 0; k < 3; k++) { const a = turn + (k * Math.PI) / 3; ctx.moveTo(x + Math.cos(a) * 4.6, PULLEY_Y - 4 + Math.sin(a) * 4.6); ctx.lineTo(x - Math.cos(a) * 4.6, PULLEY_Y - 4 - Math.sin(a) * 4.6); }
+  ctx.stroke();
+  if (dark > 0.3) { ctx.globalCompositeOperation = 'lighter'; for (const lx of [x - 23, x + 23]) glow(ctx, lx, 51, 16, '255,220,140', 0.45 * dark); ctx.globalCompositeOperation = 'source-over'; }
+  // the gate across the doorway while the car is away
+  if (!here) gate(ctx, x, HB, HB - DOOR_SPRING + 2);
+  houseRiders(ctx, x, t, here, dwellU, trip);
+}
+function paintHouseFront(ctx, { tint, dark }) {
+  const x = LIFT_X;
   // the front wall with the doorway cut out of it
   ctx.fillStyle = tint('#3d7a5a');
   ctx.beginPath(); rr(ctx, x - 18, 34, 36, HB - 34, 2); doorPath(ctx); ctx.fill('evenodd');
@@ -690,9 +733,7 @@ function drawHouseFront(ctx, t, cy, dwellU, trip, tint, dark) {
   ctx.fillStyle = tint('#e0925a'); ctx.beginPath(); ctx.moveTo(x - 14, 29); ctx.quadraticCurveTo(x - 13, 14, x - 3, 11); ctx.quadraticCurveTo(x - 9, 16, x - 10, 29); ctx.closePath(); ctx.fill();
   ctx.fillStyle = tint('#e9b949'); ctx.fillRect(x - 0.8, 1, 1.6, 8); circ(ctx, x, 3, 2, tint('#e9b949'));
   circ(ctx, x, PULLEY_Y - 4, 7, tint('#c9a227')); circ(ctx, x, PULLEY_Y - 4, 5.6, tint('#fff3dc'));
-  const turn = cy * 0.12; ctx.strokeStyle = tint('#5a3a1a'); ctx.lineWidth = 0.8; ctx.beginPath();
-  for (let k = 0; k < 3; k++) { const a = turn + (k * Math.PI) / 3; ctx.moveTo(x + Math.cos(a) * 4.6, PULLEY_Y - 4 + Math.sin(a) * 4.6); ctx.lineTo(x - Math.cos(a) * 4.6, PULLEY_Y - 4 - Math.sin(a) * 4.6); }
-  ctx.stroke(); circ(ctx, x, PULLEY_Y - 4, 1.2, tint('#5a3a1a'));
+  circ(ctx, x, PULLEY_Y - 4, 1.2, tint('#5a3a1a'));
   // the sign on the eaves
   ctx.fillStyle = tint('#ffe9b0'); ctx.font = `700 4.2px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('GRAND LIFT', x, 33.2); ctx.textBaseline = 'alphabetic';
@@ -700,13 +741,12 @@ function drawHouseFront(ctx, t, cy, dwellU, trip, tint, dark) {
   for (const lx of [x - 23, x + 23]) {
     ctx.strokeStyle = tint('#3a3440'); ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(lx + (lx < x ? 4 : -4), 46); ctx.lineTo(lx, 46); ctx.lineTo(lx, 48); ctx.stroke();
     fillRR(ctx, lx - 2.6, 48, 5.2, 7, 1.5, tint('#3a3440')); fillRR(ctx, lx - 1.8, 49, 3.6, 5, 1, dark > 0.3 ? '#ffe9a0' : tint('#f6e7c0'));
-    if (dark > 0.3) { ctx.globalCompositeOperation = 'lighter'; glow(ctx, lx, 51, 16, '255,220,140', 0.45 * dark); ctx.globalCompositeOperation = 'source-over'; }
   }
   // stone steps and flower pots
   fillRR(ctx, x - 22, HB - 1, 44, 5, 2, tint('#a39a86')); fillRR(ctx, x - 15, HB + 3, 30, 4, 1.5, tint('#b8ae9a'));
   for (const [px, col] of [[x - 27, '#f28b82'], [x + 27, '#e9b949']]) { fillRR(ctx, px - 4, HB - 6, 8, 7, 1.5, tint('#b5523b')); ctx.fillStyle = tint('#5e9c55'); ctx.beginPath(); ctx.ellipse(px, HB - 8, 5, 3.4, 0, 0, 7); ctx.fill(); circ(ctx, px - 2, HB - 9, 1.4, tint(col)); circ(ctx, px + 2, HB - 10, 1.4, tint(col)); }
-  // the gate across the doorway while the car is away
-  if (!here) gate(ctx, x, HB, HB - DOOR_SPRING + 2);
+}
+function houseRiders(ctx, x, t, here, dwellU, trip) {
   // riders: someone waits by the door; when the car arrives, they step in and the passengers step out
   const next = visitor(trip * 17 + 3);
   if (!here) drawCritter(ctx, x + 32, HB + 2, next, Math.sin(t * 0.7) > 0.6 ? 'point' : 'stand', -1, t, 0.9, next.kind === 'hamster' ? { bag: '#4f7cac' } : {});

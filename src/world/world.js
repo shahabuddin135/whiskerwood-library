@@ -3,10 +3,11 @@ import { W, BX0, BX1, IX, FH, GROUND_H, ROOF_H, L, floorTop, WORLD_L, WORLD_R } 
 import { paintRoomBack, paintRoomFront, shelfFill } from './roomArt.js';
 import { LIVE, LAMP_GLOW, drawCeiling, drawLamp, drawDesk, drawWall } from './furnish.js';
 import { drawSky, drawClouds, drawFar, drawGround, drawRoof, drawConstruction, drawBuildSign, drawComplete, timeOfDay, DAY_CYCLE } from './scenery.js';
-import { drawBuildingRoof } from './buildings.js';
-import { drawFestRoom, drawFestRoof, drawFestGarden, FestSky } from './festive.js';
+import { drawBuildingRoof, drawRoofLive } from './buildings.js';
+import { drawFestRoom, drawFestRoof, drawFestGarden, FestSky, festKey } from './festive.js';
 import { FESTIVAL } from '../data/festivals.js';
 import { drawPigeon, drawMouse, setMouseLod } from './draw.js';
+import { spriteFrame, art, animArt, setWarmup, spritesWarming } from './sprites.js';
 import { RoomSim } from './agents.js';
 import { Effects } from './effects.js';
 import { Ambient, seasonFor } from './ambient.js';
@@ -42,7 +43,8 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 export class World {
   constructor(canvas, game) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    // opaque: the sky or the soil always covers the whole screen, so the browser can skip blending
+    this.ctx = canvas.getContext('2d', { alpha: false });
     this.game = game;
     this.fx = new Effects();
     this.sims = ROOMS.map((_, i) => new RoomSim(i, this.simHooks()));
@@ -96,11 +98,13 @@ export class World {
     if (w / W < base) base = w / W;
     this.baseScale = base;
     this.scale = base * this.zoom;
-    this.cache.clear(); this.deep?.clear();
+    this.cache.clear(); this.deep?.clear(); // (sprites are kept: they're keyed by resolution)
     this.cam.x = this.clampCamX(this.cam.x);
     this.cam.y = this.clampCam(this.cam.y);
   }
   viewW() { return this.Wpx / this.scale; }
+  // Screen y of the horizon: the sky's visitors (birds, the balloon, the pigeon) stay above it.
+  horizon() { return Math.max(0, Math.min(this.Hpx, (20 - this.cam.y) * this.scale)); }
   viewH() { return this.Hpx / this.scale; }
   defaultCamY() { return -(this.Hpx - BOTTOM_PAD - 90) / this.baseScale; }
   // The camera can pan sideways to the wings on either side of the tower.
@@ -152,6 +156,22 @@ export class World {
     this.cam.anim = { from: this.cam.y, to: Math.max(a - 400, Math.min(b + 400, target)), fx: this.cam.x, tx: this.clampCamX((BX0 + BX1) / 2 - this.viewW() / 2), t: 0 };
     this.cam.vy = 0; this.cam.vx = 0;
     this.cam.hold = true;
+  }
+  // Behind the storybook: draw the world now and then from the places the opening camera passes,
+  // with a big painting allowance, so every picture is ready before the player sees any of it.
+  // Stops once a few rounds have gone by with nothing new to paint.
+  prewarm(n) {
+    const y0 = this.cam.y; const x0 = this.cam.x; const to = this.defaultCamY();
+    this.cam.y = [to, to - 280, to - 560][n % 3]; this.cam.x = this.clampCamX((BX0 + BX1) / 2 - this.viewW() / 2);
+    setWarmup(true);
+    try { this.render(); } finally { setWarmup(false); this.cam.y = y0; this.cam.x = x0; }
+    if (n > 12 && !spritesWarming()) this.warm = true;
+  }
+  // After the prologue: start up in the sky and drift down to the library.
+  introPan() {
+    const to = this.defaultCamY(); const x = this.clampCamX((BX0 + BX1) / 2 - this.viewW() / 2);
+    this.cam.y = to - 560; this.cam.x = x; this.cam.vx = this.cam.vy = 0; this.cam.hold = false;
+    this.cam.anim = { from: this.cam.y, to, fx: x, tx: x, t: 0, dur: 3.4 };
   }
   panToTop() { this.panTo(this.contentTop() + 220, true, (BX0 + BX1) / 2); }
   focusedRoom() {
@@ -230,7 +250,8 @@ export class World {
       }
       if (!down) return;
       const dt = performance.now() - down.t;
-      if (!down.moved && dt < 600) this.handleTap(e.clientX, e.clientY);
+      // (a dialog that popped up while the finger was down gets the tap, not the world behind it)
+      if (!down.moved && dt < 600 && !document.body.classList.contains('modal-open')) this.handleTap(e.clientX, e.clientY);
       else {
         const s = down.samples; const a = s[0]; const b = s[s.length - 1];
         const vt = (b.t - a.t) / 1000;
@@ -253,14 +274,15 @@ export class World {
 
   handleTap(sx, sy) {
     const game = this.game;
-    // Things in the sky (screen space)
-    if (this.pigeon && !this.pigeon.caught && Math.hypot(sx - this.pigeon.x, sy - (this.pigeon.y + 14)) < 46) {
+    // Things in the sky (screen space), where they can be seen
+    const inSky = sy < this.horizon();
+    if (inSky && this.pigeon && !this.pigeon.caught && Math.hypot(sx - this.pigeon.x, sy - (this.pigeon.y + 14)) < 46) {
       this.pigeon.caught = true; this.pigeon.vx *= 2.2;
       sfx.coo(); sfx.sparkle();
       this.ui?.openParcel();
       return;
     }
-    const sky = this.ambient.hitFront(sx, sy);
+    const sky = inSky ? this.ambient.hitFront(sx, sy) : null;
     if (sky === 'balloon') {
       const amt = game.rewardCoins(60); game.earn(amt); game.s.stats.balloons++; game.checkQuest();
       sfx.whistle(); sfx.collect(false);
@@ -490,8 +512,8 @@ export class World {
       if (z.t >= 1) this.zoomAnim = null;
     }
     if (this.cam.anim) {
-      const a = this.cam.anim; a.t = Math.min(1, a.t + dt / 0.6);
-      const e = 1 - Math.pow(1 - a.t, 3);
+      const a = this.cam.anim; a.t = Math.min(1, a.t + dt / (a.dur || 0.6));
+      const e = a.dur ? (a.t < 0.5 ? 4 * a.t ** 3 : 1 - (-2 * a.t + 2) ** 3 / 2) : 1 - Math.pow(1 - a.t, 3);
       this.cam.y = a.from + (a.to - a.from) * e;
       if (a.tx != null) this.cam.x = a.fx + (a.tx - a.fx) * e;
       if (a.t >= 1) this.cam.anim = null;
@@ -572,7 +594,11 @@ export class World {
     }
     this.ambientT -= dt;
     if (this.ambientT <= 0) { this.ambientT = rand(5, 12); if (tod.dark > 0.4) { if (season.key !== 'winter') sfx.cricket(); } else if (this.ambient.weather.kind !== 'rain') sfx.bird(); }
-    music.setMode(tod.night ? 'night' : 'day');
+    // which piece of the songbook fits the moment (audio/songs.js)
+    const below = this.cam.y + this.viewH() * 0.5 > 250; // looking into the Deep Stacks
+    const wx = this.ambient.weather;
+    music.setMode(below ? 'deep' : tod.night ? 'night' : this.game.festival() ? 'festival'
+      : wx.kind === 'rain' && wx.intensity > 0.5 ? 'rain' : this.season.key === 'winter' ? 'winter' : 'day');
 
     // chimney smoke
     this.smokeT -= dt;
@@ -621,14 +647,20 @@ export class World {
     const world = () => ctx.setTransform(d * this.scale, 0, 0, d * this.scale, -d * this.scale * this.cam.x, -d * this.scale * this.cam.y);
 
     // Section timing for tuning: set WWL.world.prof = {} in the console, read it back later.
-    const prof = this.prof; let pt = prof ? performance.now() : 0;
-    const mark = (name) => { if (!prof) return; const n = performance.now(); prof[name] = (prof[name] || 0) + (n - pt); pt = n; };
+    // prof.ops (optional): a counter of canvas calls, to see where the drawing work goes
+    const prof = this.prof; let pt = prof ? performance.now() : 0; let po = prof?.ops ? prof.ops() : 0;
+    const mark = (name) => {
+      if (!prof) return;
+      const n = performance.now(); prof[name] = (prof[name] || 0) + (n - pt); pt = n;
+      if (prof.ops) { const k = prof.ops(); prof['#' + name] = (prof['#' + name] || 0) + (k - po); po = k; }
+    };
     if (prof) prof.frames = (prof.frames || 0) + 1;
 
     const fest = game.festival();
     // cached pictures are painted at this many pixels per world unit (held while zooming)
     const px = Math.min(2.5, Math.max(0.75, Math.round(this.scale * this.dpr * 2) / 2));
     const stable = !(this.pinching || this.zoomAnim);
+    spriteFrame(!stable);
     // mice far away on screen are drawn with fewer details
     setMouseLod(this.scale * this.dpr < 1.25 || this.lite);
     const sky = view.top < 92; // is anything above the soil on screen?
@@ -639,7 +671,10 @@ export class World {
       if (fest) this.festSky.draw(ctx, view, fest, tod, this.frameDt);
       this.ambient.drawSkyFx(ctx, view);
       drawClouds(ctx, view, tod, this.ambient.weather.intensity);
+      // birds and shooting stars stay in the sky, never over the soil
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.Wpx, this.horizon()); ctx.clip();
       this.ambient.drawBirds(ctx);
+      ctx.restore();
       mark('sky');
       world();
       drawFar(ctx, view, tod, scene, t, season);
@@ -652,7 +687,8 @@ export class World {
       drawGround(ctx, view, tod, scene, t, this.fisher, season, px, stable);
       if (game.giftDue()) drawGiftBox(ctx, GIFT_X, GIFT_Y, t);
       this.ambient.drawGarden(ctx, view, tod, season);
-      if (fest) drawFestGarden(ctx, fest, t, tod, (hex) => darken(hex, tod.dark));
+      // festival decorations are little flip-books of cached pictures (six frames a loop)
+      if (fest) { const dq = Math.round(tod.dark * 20) / 20; animArt(ctx, `festgarden|${fest.id}|${festKey(fest)}|${dq}`, FEST_GARDEN_BOX, paintFestGarden, { fest, dq }, t, 2.4, 6); }
     }
     mark('ground');
     if (view.bottom > 4) this.deep.draw(ctx, view, t, s.coins, px, stable, (hex) => darken(hex, tod.dark), tod.dark);
@@ -689,9 +725,9 @@ export class World {
     const roofOpts = { winter: season.key === 'winter', fair: !!this.events.fair };
     const roofVisible = view.bottom > roofY - ROOF_H - 220 && view.top < roofY + 10;
     if (roofVisible) {
-      this.roof = drawBuildingRoof(ctx, scene, roofY, t, tod, 'Whiskerwood Library', roofOpts) || { ...drawRoof(ctx, roofY, t, tod, 'Whiskerwood Library', roofOpts), peak: roofY - ROOF_H, eaves: meadowEaves(roofY) };
+      this.roof = this.drawRoofCached(ctx, scene, roofY, t, tod, roofOpts);
       this.chimney = this.roof.chimneyX != null ? this.roof : null;
-      if (fest) drawFestRoof(ctx, fest, this.roof, t, tod);
+      if (fest) this.drawFestRoofCached(ctx, fest, roofY, t, tod);
     } else this.chimney = null;
 
     const next = game.nextFloor();
@@ -723,14 +759,50 @@ export class World {
     mark('fx');
 
     screen();
-    if (this.pigeon) {
-      const p = this.pigeon;
-      ctx.save(); ctx.translate(p.x, p.y + Math.sin(p.t * 3) * 8); ctx.scale(p.dir, 1);
-      drawPigeon(ctx, 0, 0, p.t, 1.5, !p.caught);
+    // the pigeon and the hot-air balloon fly in the sky only (cut off at the horizon)
+    if (sky && (this.pigeon || this.ambient.balloon)) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.Wpx, this.horizon()); ctx.clip();
+      if (this.pigeon) {
+        const p = this.pigeon;
+        ctx.save(); ctx.translate(p.x, p.y + Math.sin(p.t * 3) * 8); ctx.scale(p.dir, 1);
+        drawPigeon(ctx, 0, 0, p.t, 1.5, !p.caught);
+        ctx.restore();
+      }
+      this.ambient.drawFront(ctx);
       ctx.restore();
     }
-    this.ambient.drawFront(ctx);
     mark('front');
+  }
+
+  // The roof is one cached picture (painted still, at y = 0) plus its few moving parts.
+  drawRoofCached(ctx, scene, y0, t, tod, opts) {
+    const lit = tod.dark > 0.3;
+    const key = `roof|${scene}|${lit ? 1 : 0}|${opts.winter ? 1 : 0}|${opts.fair ? 1 : 0}`;
+    const arg = { scene, lit, opts, key, geo: this.roofGeo || (this.roofGeo = new Map()) };
+    art(ctx, key, ROOF_BOX, paintRoofStill, arg, 0, y0);
+    if (!arg.geo.has(key)) { const c = document.createElement('canvas'); c.width = c.height = 1; paintRoofStill(c.getContext('2d'), arg); }
+    drawRoofLive(ctx, scene, y0, t, tod);
+    const g = arg.geo.get(key);
+    if (this.roofAt?.key !== key || this.roofAt.y0 !== y0) {
+      this.roofAt = { key, y0, roof: { ...g, chimneyY: g.chimneyY != null ? g.chimneyY + y0 : g.chimneyY, peak: g.peak + y0, eaves: g.eaves.map(([x, y]) => [x, y + y0]) } };
+    }
+    return this.roofAt.roof;
+  }
+
+  // The festival lights along the roof's edge, as a flip-book in roof-relative coordinates.
+  drawFestRoofCached(ctx, fest, y0, t, tod) {
+    const pts = this.roof?.eaves; if (!pts || pts.length < 2) return;
+    const rk = this.roofAt?.key || 'roof';
+    if (this.festRoofAt?.rk !== rk || this.festRoofAt.y0 !== y0) {
+      const rel = pts.map(([x, y]) => [x, y - y0]);
+      const xs = rel.map((p) => p[0]); const ys = rel.map((p) => p[1]);
+      const sx = (rel[0][0] + rel[rel.length - 1][0]) / 2 - 104; const sy = rel[0][1] - 26;
+      const x0 = Math.min(...xs, sx) - 14; const x1 = Math.max(...xs, sx) + 14;
+      const top = Math.min(...ys, sy) - 20; const bot = Math.max(...ys, sy) + 30;
+      this.festRoofAt = { rk, y0, rel, box: [x0, top, x1 - x0, bot - top] };
+    }
+    const lit = tod.dark > 0.3;
+    animArt(ctx, `festroof|${fest.id}|${festKey(fest)}|${lit ? 1 : 0}|${rk}`, this.festRoofAt.box, paintFestRoof, { fest, lit, eaves: this.festRoofAt.rel }, t, 2.4, 6, 0, y0);
   }
 
   /* ---------------- wings ---------------- */
@@ -807,26 +879,23 @@ export class World {
     const r = this.game.s.rooms[i];
     const def = ROOMS[i];
     const w = BX1 - BX0;
+    // one save/restore for the whole floor (each one copies the whole drawing state)
     ctx.save(); ctx.translate(IX, y0);
     this.events.drawBehind(ctx, i); // things seen through the window
-    ctx.restore();
-    ctx.drawImage(art.back, BX0, y0, w, FH);
-    ctx.save(); ctx.translate(IX, y0);
+    ctx.drawImage(art.back, BX0 - IX, 0, w, FH);
     const furn = this.game.floorFurniture(i);
     if (LIVE.has(furn.ceiling)) drawCeiling(ctx, furn.ceiling, def.pal, this.t);
     if (LIVE.has(furn.lamp)) L.lamps.forEach((lx) => drawLamp(ctx, furn.lamp, lx, def.pal, this.t));
     if (LIVE.has(furn.wall)) drawWall(ctx, furn.wall, def.pal, this.t);
     const fest = this.game.festival();
-    if (fest) drawFestRoom(ctx, fest, this.t, tod);
+    if (fest) animArt(ctx, `festroom|${fest.id}|${festKey(fest)}|${tod.dark > 0.3 ? 1 : 0}`, FEST_ROOM_BOX, paintFestRoom, { fest, lit: tod.dark > 0.3 }, this.t, 2.4, 6);
     const stamp = sim.stampT > 0;
     drawMouse(ctx, L.librarianX, 152, {
       fur: '#b8aca1', belly: '#efe6dc', dir: -1, pose: stamp ? 'wave' : 'stand', t: sim.librarianT,
       glasses: true, scarf: def.pal.accent, hat: r.staff >= 10 ? 'beret' : null, hatCol: def.pal.trim, s: 1, noShadow: true,
     });
     sim.drawSeated(ctx);
-    ctx.restore();
-    ctx.drawImage(art.front, BX0, y0, w, FH);
-    ctx.save(); ctx.translate(IX, y0);
+    ctx.drawImage(art.front, BX0 - IX, 0, w, FH);
     if (LIVE.has(furn.desk)) drawDesk(ctx, furn.desk, L.desk.x1 - 9, L.desk.top, this.t);
     sim.drawWalkers(ctx, this.t);
     this.events.drawOver(ctx, i);
@@ -851,6 +920,20 @@ export class World {
 function BRANCH_FOR_PLOT(plot, game) {
   for (let i = game.s.branch + 1; i < game.s.branch + 12; i++) if (branchInfo(i).plots > plot) return branchInfo(i).name;
   return 'a bigger site';
+}
+
+const ROOF_BOX = [BX0 - 50, -180, BX1 - BX0 + 100, 214];
+// festival decorations: around a floor's window (room coordinates), by the garden path (world)
+const FEST_ROOM_BOX = [L.window.x - 16, L.window.y - 14, L.window.w + 34, L.window.h + 24];
+const FEST_GARDEN_BOX = [196, 22, 80, 76];
+const paintFestRoom = (ctx, a, t) => drawFestRoom(ctx, a.fest, t, { dark: a.lit ? 1 : 0 });
+const paintFestGarden = (ctx, a, t) => drawFestGarden(ctx, a.fest, t, { dark: a.dq }, (hex) => darken(hex, a.dq));
+const paintFestRoof = (ctx, a, t) => drawFestRoof(ctx, a.fest, { eaves: a.eaves }, t, { dark: a.lit ? 1 : 0 });
+function paintRoofStill(ctx, a) {
+  const tod = { dark: a.lit ? 1 : 0 }; // all a roof picture needs to know: are the windows lit?
+  const name = 'Whiskerwood Library';
+  const g = drawBuildingRoof(ctx, a.scene, 0, null, tod, name, a.opts) || { ...drawRoof(ctx, 0, null, tod, name, a.opts), peak: -ROOF_H, eaves: meadowEaves(0) };
+  a.geo.set(a.key, g);
 }
 
 // Points along the original cottage roof's edges (for festival lights).

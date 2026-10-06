@@ -26,9 +26,9 @@ const shops = (n) => (s) => Object.values(s.deep?.biz || {}).filter((b) => b.bui
 
 export const STORY = [
   { id: 'intro', when: () => true, lines: [
-    ['mimsy', "Dear little one, I've left you my tiny library in the old meadow. It's only one cosy nook for now…"],
-    ['mimsy', '…but every mouse who reads here drops a coin in the jar. Add armchairs, fill the shelves, build new floors!'],
-    ['pip', "Hi! I'm Pip, your apprentice. I'll help you run things. Let's open the doors!"],
+    ['pip', "Oh! You must be Grandma Mimsy's grandchild! I'm Pip, her apprentice. She said you'd come."],
+    ['pip', "It's only one cosy nook for now, and it's been asleep for ever so long… but look, a reader's already at the door!"],
+    ['pip', 'Every mouse who reads here drops a coin in our jar. Add armchairs, fill the shelves, build new floors. Let’s light the lamp!'],
   ] },
   { id: 'firstBook', when: (s, h) => h.books >= 1, lines: [
     ['pip', 'Look — a brand-new book for our album! Every ×2 milestone brings its floor another book.'],

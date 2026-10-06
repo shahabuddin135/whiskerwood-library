@@ -9,7 +9,7 @@ export function buses() { return bus; }
 export function isUnlocked() { return unlocked; }
 export function whenReady(fn) { if (ctx && unlocked) fn(ctx); else onReady.push(fn); }
 
-function makeImpulse(c, seconds = 2.2, decay = 2.4) {
+function makeImpulse(c, seconds = 1.6, decay = 2.4) { // (a shorter room is lighter work for a phone)
   const rate = c.sampleRate;
   const len = Math.floor(rate * seconds);
   const buf = c.createBuffer(2, len, rate);
@@ -27,7 +27,8 @@ function makeImpulse(c, seconds = 2.2, decay = 2.4) {
 function build() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
-  ctx = new AC({ latencyHint: 'interactive' });
+  // 'balanced': a slightly bigger audio buffer, so a busy phone doesn't crackle (taps still feel instant)
+  ctx = new AC({ latencyHint: 'balanced' });
   bus.master = ctx.createGain();
   bus.master.gain.value = 0.9;
   const comp = ctx.createDynamicsCompressor();

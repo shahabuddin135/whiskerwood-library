@@ -1,8 +1,10 @@
-// Original cozy waltz in F major, performed live by small Web Audio synths.
-// Inspired by the warm, wistful feel of Studio Ghibli scores: 3/4 time, the
-// "royal road" IV-V-iii-vi progression, maj7/add9 colours, piano arpeggios,
-// a music box, a breathy flute and a soft string pad.
+// Original music, performed live by small Web Audio synths. The Meadow Waltz (below) plays by day:
+// F major, inspired by the warm, wistful feel of Studio Ghibli scores: 3/4 time, the "royal road"
+// IV-V-iii-vi progression, maj7/add9 colours, piano arpeggios, a music box, a breathy flute and a
+// soft string pad. The rest of the songbook (songs.js) plays at night, underground, on festival
+// days, in the rain and in winter, crossfading as the scene changes.
 import { audioCtx, buses, whenReady, setVolume } from './audio.js';
+import { SONGS } from './songs.js';
 import { CONFIG } from '../config.js';
 
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -41,10 +43,8 @@ const DAY_PLAN = [
   { sec: 'A', lead: 'flute', oct: 0, pad: true, acc: 'flow' },
   { sec: 'B', lead: 'flute', oct: 0, pad: true, acc: 'flow', double: 'box' },
 ];
-const NIGHT_PLAN = [
-  { sec: 'A', lead: 'box', oct: 12, pad: true, acc: 'waltz' },
-  { sec: 'B', lead: 'piano', oct: 0, pad: true, acc: 'waltz' },
-];
+const WALTZ = { bpm: 96, beats: 3, ch: CH, sections: SECTIONS, plan: DAY_PLAN };
+const songFor = (mode) => SONGS[mode] || WALTZ;
 
 let noiseBuf = null;
 function noise(ctx) {
@@ -189,51 +189,62 @@ export class Music {
 
   setEnabled(on) { this.enabled = on; if (on) this.start(); else this.stop(); }
   setVolume(v) { this.volume = v; if (this.running) setVolume('music', v * 0.55, 0.3); if (this.el) this.el.volume = Math.min(1, v); }
+  // day | night | deep | festival | rain | winter: the next piece crossfades in once the scene
+  // has settled for a moment (so scrolling past the garden doesn't flip the music back and forth)
   setMode(m) {
-    this.pendingMode = m;
+    if (m !== this.pendingMode) { this.pendingMode = m; this.pendingAt = performance.now(); }
     if (this.el && this.running && m !== this.mode && CONFIG.musicFiles?.night) { this.mode = m; this.playFile(); }
   }
 
-  plan() { return this.mode === 'night' ? NIGHT_PLAN : DAY_PLAN; }
-  bpm() { return this.mode === 'night' ? 78 : 96; }
+  song() { return songFor(this.mode); }
+  plan() { return this.song().plan; }
+  bpm() { return this.song().bpm; }
 
   tick() {
     const ctx = audioCtx();
     if (!ctx || !this.running || ctx.state !== 'running') return;
-    // If the tab slept, skip ahead instead of dumping a pile of notes.
-    if (this.nextTime < ctx.currentTime - 0.5) this.nextTime = ctx.currentTime + 0.1;
-    while (this.nextTime < ctx.currentTime + 0.35) {
+    // If the game stalled (or the tab slept), skip ahead instead of playing late notes all at once.
+    if (this.nextTime < ctx.currentTime) this.nextTime = ctx.currentTime + 0.05;
+    // a new piece: fade this one out, start the next from its first bar, fade it in
+    if (this.pendingMode !== this.mode && !this.fading && performance.now() - (this.pendingAt || 0) > 2500) {
+      this.fading = ctx.currentTime + 1.4;
+      setVolume('music', 0, 1.3);
+    }
+    if (this.fading) {
+      if (ctx.currentTime < this.fading) return;
+      this.fading = 0; this.mode = this.pendingMode; this.bar = 0; this.pass = 0;
+      this.nextTime = ctx.currentTime + 0.15;
+      setVolume('music', this.volume * 0.55, 1.8);
+    }
+    while (this.nextTime < ctx.currentTime + 0.8) { // scheduled well ahead, so a busy moment can't starve it
       this.scheduleBar(ctx, this.nextTime);
-      this.nextTime += (60 / this.bpm()) * 3;
+      this.nextTime += (60 / this.bpm()) * this.song().beats;
       this.bar++;
-      if (this.bar >= 16) {
-        this.bar = 0; this.pass++;
-        if (this.pendingMode !== this.mode && this.pass % 2 === 0) { this.mode = this.pendingMode; this.pass = 0; }
-      }
+      if (this.bar >= 16) { this.bar = 0; this.pass++; }
     }
   }
 
   scheduleBar(ctx, t0, dest = buses().music) {
-    const plan = this.plan();
-    const p = plan[this.pass % plan.length];
-    const sec = SECTIONS[p.sec];
-    const spb = 60 / this.bpm();
-    const [bass, tones] = CH[sec.chords[this.bar]];
+    const song = this.song();
+    const p = song.plan[this.pass % song.plan.length];
+    const sec = song.sections[p.sec];
+    const spb = 60 / song.bpm; const beats = song.beats;
+    const [bass, tones] = song.ch[sec.chords[this.bar]];
     const hum = () => (Math.random() - 0.5) * 0.014;
-    const night = this.mode === 'night';
+    const soft = song.quiet || 1;
 
-    // Accompaniment
+    // Accompaniment: rolling eighth-note arpeggios, or bass on the first beat and chords after
     if (p.acc === 'flow') {
-      const pat = [bass, tones[0], tones[1], tones[2] ?? tones[1] + 12, tones[1], tones[0]];
-      pat.forEach((m, k) => voices.piano(ctx, dest, t0 + (k * spb) / 2 + hum(), k === 0 ? m : m, spb * 1.4, k === 0 ? 0.2 : 0.1 + Math.random() * 0.025));
+      const up = [tones[0], tones[1], tones[2], tones[3] ?? tones[0] + 12];
+      const pat = beats === 4 ? [bass, up[0], up[1], up[2], up[3], up[2], up[1], up[0]] : [bass, up[0], up[1], up[2], up[1], up[0]];
+      pat.forEach((m, k) => voices.piano(ctx, dest, t0 + (k * spb) / 2 + hum(), m, spb * 1.4, (k === 0 ? 0.2 : 0.1 + Math.random() * 0.025) * soft));
     } else {
-      voices.piano(ctx, dest, t0 + hum(), bass, spb * 2.5, 0.18);
-      tones.forEach((m, k) => voices.piano(ctx, dest, t0 + spb + k * 0.03 + hum(), m, spb, 0.07));
-      tones.forEach((m, k) => voices.piano(ctx, dest, t0 + spb * 2 + k * 0.025 + hum(), m, spb, 0.055));
+      voices.piano(ctx, dest, t0 + hum(), bass, spb * 2.5, 0.18 * soft);
+      for (let b = 1; b < beats; b++) tones.forEach((m, k) => voices.piano(ctx, dest, t0 + spb * b + k * 0.028 + hum(), m, spb, (b === 1 ? 0.07 : 0.055) * soft));
     }
-    voices.sub(ctx, dest, t0, bass, spb * 2, night ? 0.1 : 0.13);
+    voices.sub(ctx, dest, t0, bass, spb * 2, 0.12 * soft);
 
-    if (p.pad) voices.strings(ctx, dest, t0, tones, spb * 3, night ? 0.026 : 0.032);
+    if (p.pad) voices.strings(ctx, dest, t0, tones, spb * beats, 0.03 * soft);
 
     // Melody
     let beat = 0;
@@ -243,7 +254,7 @@ export class Music {
         const d = len * spb;
         const lead = p.lead;
         const vel = lead === 'piano' ? 0.26 : lead === 'box' ? 0.2 : 0.16;
-        voices[lead](ctx, dest, t, m + p.oct, d, night ? vel * 0.8 : vel, true);
+        voices[lead](ctx, dest, t, m + p.oct, d, vel * soft, true);
         if (p.double) voices[p.double](ctx, dest, t, m + 12, d, 0.08);
       }
       beat += len;
@@ -272,7 +283,7 @@ export async function renderPreview(seconds = 60, mode = 'day', rate = 44100, re
   let t = 0.1;
   while (t < seconds) {
     m.scheduleBar(ctx, t, dest);
-    t += (60 / m.bpm()) * 3;
+    t += (60 / m.bpm()) * m.song().beats;
     if (++m.bar >= 16) { m.bar = 0; m.pass++; }
   }
   return ctx.startRendering();

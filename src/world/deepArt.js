@@ -10,6 +10,7 @@ import {
 } from '../data/deep.js';
 import { fmtTime } from '../core/format.js';
 import { glow } from './glow.js';
+import { art } from './sprites.js';
 import { bizTier } from '../data/mole.js';
 import { paintBizWall, paintBiz, drawBizLive, drawToLet, paintLiftTop, drawLift, drawCommuters, liftHit } from './moleArt.js';
 
@@ -156,8 +157,7 @@ export class DeepView {
   drawVaultLive(ctx, t) {
     const { x: vx, y: vy, h: vh } = VAULT;
     drawMouse(ctx, vx + 40, vy + vh - 4, { fur: '#8f7f73', belly: '#d9cdc2', dir: 1, pose: 'sit', t: t * 0.3, sleep: true, hat: 'bobble', hatCol: '#4f7cac', noShadow: true });
-    ctx.fillStyle = '#fff'; ctx.font = `600 7px ${FONT}`; ctx.textAlign = 'center';
-    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 2); ctx.fillText('z', vx + 46 + Math.sin(t) * 2, vy + vh - 34 - ((t * 6) % 10)); ctx.globalAlpha = 1;
+    art(ctx, 'vaultZ', [-4, -7, 8, 9], paintZ, 0, vx + 46 + Math.sin(t) * 2, vy + vh - 34 - ((t * 6) % 10), 1, 0, 0.6 + 0.4 * Math.sin(t * 2));
   }
 
   /* ---------------- the maze ---------------- */
@@ -361,46 +361,21 @@ export class DeepView {
     let c0 = 0; while (c0 < DEEP_COLS && cellKind(c0, DEEP_ROWS - 1) !== 'D') c0++;
     const x = cellX(c0); const y = cellY(DEEP_ROWS - 1); const W = CELL_W * 3; const H = CELL_H;
     if (!d.door) {
-      // rock face with the great sealed door
-      ctx.fillStyle = '#4a4050'; ctx.fillRect(x, y, W, H); texRect(ctx, 'rock', x, y, W, H, 1);
+      // rock face with the great sealed door: one picture per number of locks opened
       const dx = x + W / 2; const dy = y + H - 8;
-      ctx.fillStyle = '#6d6478'; ctx.beginPath(); ctx.moveTo(dx - 70, dy); ctx.lineTo(dx - 70, dy - 70); ctx.arc(dx, dy - 70, 70, Math.PI, 0); ctx.lineTo(dx + 70, dy); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#857c90'; ctx.beginPath(); ctx.moveTo(dx - 62, dy); ctx.lineTo(dx - 62, dy - 68); ctx.arc(dx, dy - 68, 62, Math.PI, 0); ctx.lineTo(dx + 62, dy); ctx.closePath(); ctx.fill();
-      texFill(ctx, 'rock', 0.6);
-      ctx.strokeStyle = 'rgba(40,30,50,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx, dy - 130); ctx.stroke();
-      // a carved dragon curled over the arch
-      ctx.strokeStyle = 'rgba(40,30,50,0.45)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.arc(dx, dy - 68, 50, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-      ctx.beginPath(); ctx.arc(dx + 44, dy - 92, 8, 0, 7); ctx.stroke();
-      // eight locks, one for each hall
       const done = g.hallsDone();
-      for (let k = 0; k < 8; k++) {
-        const a = Math.PI * (1.08 + (k / 7) * 0.84); const lx = dx + Math.cos(a) * 36; const ly = dy - 60 + Math.sin(a) * 36;
-        circ(ctx, lx, ly, 6, k < done ? '#ffd257' : '#3a3242');
-        if (k < done) { ctx.globalCompositeOperation = 'lighter'; glow(ctx, lx, ly, 14, '255,220,120', 0.5); ctx.globalCompositeOperation = 'source-over'; }
-        ctx.fillStyle = k < done ? '#8a5a1a' : '#6d6478'; ctx.fillRect(lx - 1, ly - 2, 2, 4);
-      }
-      ctx.fillStyle = '#fff3dc'; ctx.font = `700 8px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(done >= 8 ? 'The great door is unlocked' : `${done} / 8 locks open`, dx, dy - 14);
+      art(ctx, `door|${done}`, [x, y, W, H], paintDoor, { x, y, W, H, done });
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < Math.min(8, done); k++) { const a = Math.PI * (1.08 + (k / 7) * 0.84); glow(ctx, dx + Math.cos(a) * 36, dy - 60 + Math.sin(a) * 36, 14, '255,220,120', 0.5); }
+      ctx.globalCompositeOperation = 'source-over';
       // warm light leaking under the door
       const gl = ctx.createLinearGradient(0, dy - 8, 0, dy); gl.addColorStop(0, 'rgba(255,170,90,0)'); gl.addColorStop(1, `rgba(255,170,90,${0.35 + 0.1 * Math.sin(t)})`);
       ctx.fillStyle = gl; ctx.fillRect(dx - 60, dy - 8, 120, 8);
       if (done >= 8 && g.doorReachable()) this.drawDigMarker(ctx, dx - CELL_W / 2, dy - 90 - CELL_H / 2, t, true);
       return;
     }
-    // the cavern: warm gold light, mounds of books and coins, and Umber
-    const bg = ctx.createRadialGradient(x + W / 2, y + H, 20, x + W / 2, y + H * 0.6, W * 0.6);
-    bg.addColorStop(0, '#8a5634'); bg.addColorStop(1, '#3a2620');
-    ctx.fillStyle = bg; ctx.fillRect(x, y, W, H);
-    texRect(ctx, 'rock', x, y, W, H, 0.6);
-    // hoard
-    const R = rng(99);
-    for (let k = 0; k < 7; k++) {
-      const hx = x + 30 + k * 64; const hw = 50 + R() * 30; const hh = 18 + R() * 16;
-      ctx.fillStyle = k % 2 ? '#e9a623' : '#d99423'; ctx.beginPath(); ctx.moveTo(hx - hw / 2, y + H); ctx.quadraticCurveTo(hx, y + H - hh * 2, hx + hw / 2, y + H); ctx.fill();
-    }
-    for (let k = 0; k < 40; k++) coinIcon(ctx, x + 20 + R() * (W - 40), y + H - 4 - R() * 20, 2.6);
-    for (let k = 0; k < 14; k++) { const bx = x + 20 + R() * (W - 40); const by = y + H - 8 - R() * 18; ctx.save(); ctx.translate(bx, by); ctx.rotate((R() - 0.5) * 0.8); fillRR(ctx, -6, -4, 12, 8, 1, ['#b5523b', '#3d7a5a', '#4f7cac', '#8e3b46', '#5b3f8c'][k % 5]); ctx.fillStyle = '#f6ecd6'; ctx.fillRect(-5, 2.4, 10, 1.2); ctx.restore(); }
+    // the cavern: warm gold light, mounds of books and coins (one picture), and Umber
+    art(ctx, 'hoard', [x, y, W, H], paintHoard, { x, y, W, H });
     // Umber curls up left of the lift shaft (which runs down the cavern's right side)
     drawDragon(ctx, x + W / 2 - 82, y + H - 16, { t, awake: d.tales, s: 0.78, glasses: d.tales });
     if (d.tales) {
@@ -420,6 +395,42 @@ export class DeepView {
     return [c, r];
   }
 }
+
+function paintDoor(ctx, { x, y, W, H, done }) {
+  ctx.fillStyle = '#4a4050'; ctx.fillRect(x, y, W, H); texRect(ctx, 'rock', x, y, W, H, 1);
+  const dx = x + W / 2; const dy = y + H - 8;
+  ctx.fillStyle = '#6d6478'; ctx.beginPath(); ctx.moveTo(dx - 70, dy); ctx.lineTo(dx - 70, dy - 70); ctx.arc(dx, dy - 70, 70, Math.PI, 0); ctx.lineTo(dx + 70, dy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#857c90'; ctx.beginPath(); ctx.moveTo(dx - 62, dy); ctx.lineTo(dx - 62, dy - 68); ctx.arc(dx, dy - 68, 62, Math.PI, 0); ctx.lineTo(dx + 62, dy); ctx.closePath(); ctx.fill();
+  texFill(ctx, 'rock', 0.6);
+  ctx.strokeStyle = 'rgba(40,30,50,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx, dy - 130); ctx.stroke();
+  // a carved dragon curled over the arch
+  ctx.strokeStyle = 'rgba(40,30,50,0.45)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(dx, dy - 68, 50, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(dx + 44, dy - 92, 8, 0, 7); ctx.stroke();
+  // eight locks, one for each hall
+  for (let k = 0; k < 8; k++) {
+    const a = Math.PI * (1.08 + (k / 7) * 0.84); const lx = dx + Math.cos(a) * 36; const ly = dy - 60 + Math.sin(a) * 36;
+    circ(ctx, lx, ly, 6, k < done ? '#ffd257' : '#3a3242');
+    ctx.fillStyle = k < done ? '#8a5a1a' : '#6d6478'; ctx.fillRect(lx - 1, ly - 2, 2, 4);
+  }
+  ctx.fillStyle = '#fff3dc'; ctx.font = `700 8px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(done >= 8 ? 'The great door is unlocked' : `${done} / 8 locks open`, dx, dy - 14);
+}
+function paintHoard(ctx, { x, y, W, H }) {
+  const bg = ctx.createRadialGradient(x + W / 2, y + H, 20, x + W / 2, y + H * 0.6, W * 0.6);
+  bg.addColorStop(0, '#8a5634'); bg.addColorStop(1, '#3a2620');
+  ctx.fillStyle = bg; ctx.fillRect(x, y, W, H);
+  texRect(ctx, 'rock', x, y, W, H, 0.6);
+  const R = rng(99);
+  for (let k = 0; k < 7; k++) {
+    const hx = x + 30 + k * 64; const hw = 50 + R() * 30; const hh = 18 + R() * 16;
+    ctx.fillStyle = k % 2 ? '#e9a623' : '#d99423'; ctx.beginPath(); ctx.moveTo(hx - hw / 2, y + H); ctx.quadraticCurveTo(hx, y + H - hh * 2, hx + hw / 2, y + H); ctx.fill();
+  }
+  for (let k = 0; k < 40; k++) coinIcon(ctx, x + 20 + R() * (W - 40), y + H - 4 - R() * 20, 2.6);
+  for (let k = 0; k < 14; k++) { const bx = x + 20 + R() * (W - 40); const by = y + H - 8 - R() * 18; ctx.save(); ctx.translate(bx, by); ctx.rotate((R() - 0.5) * 0.8); fillRR(ctx, -6, -4, 12, 8, 1, ['#b5523b', '#3d7a5a', '#4f7cac', '#8e3b46', '#5b3f8c'][k % 5]); ctx.fillStyle = '#f6ecd6'; ctx.fillRect(-5, 2.4, 10, 1.2); ctx.restore(); }
+}
+
+function paintZ(ctx) { ctx.fillStyle = '#fff'; ctx.font = `600 7px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('z', 0, 0); }
 
 /* =================================================================== */
 /* Cell painting (cached)                                               */

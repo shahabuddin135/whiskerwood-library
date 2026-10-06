@@ -22,7 +22,9 @@ export const Ads = {
   get provider() { return provider; },
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
-  async init() {
+  // preloadAfter: ms to wait before loading the first rewarded ad. On Android the ad SDK's web views
+  // share the game's process, so loading an ad while the game is busy starting up makes it stutter.
+  async init({ preloadAfter = 20000 } = {}) {
     sessionStart = Date.now();
     if (Capacitor.isNativePlatform()) {
       try {
@@ -41,7 +43,7 @@ export const Ads = {
           } catch { /* optional */ }
         }
         provider = 'admob';
-        this.preloadRewarded();
+        setTimeout(() => this.preloadRewarded(), preloadAfter); // (an ad asked for sooner loads on demand)
         return;
       } catch (e) {
         console.warn('AdMob unavailable, falling back to mock ads', e);

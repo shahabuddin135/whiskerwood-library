@@ -2,9 +2,12 @@
 // the original red-tiled cottage (drawn by scenery.drawRoof); the others are drawn here in the same
 // flat style. Every roof returns { chimneyX, chimneyY } for smoke (or null) and `eaves`, a polyline
 // along its edge that festival lights and Book Fair bunting hang from.
+// With t = null a roof is painted still, for its cached picture: the moving parts (weathervane,
+// sails, lighthouse beam, flags) are drawn every frame on top by drawRoofLive().
 import { BX0, BX1, ROOF_H, WALL, FH } from './layout.js';
 import { rr, fillRR, ell, circ, rng, star } from './draw.js';
 import { texRect } from './textures.js';
+import { art } from './sprites.js';
 
 const FONT = '"Fredoka", "Baloo 2", system-ui, sans-serif';
 const CX = (BX0 + BX1) / 2;
@@ -17,12 +20,16 @@ export function roofSign(ctx, y0, name) {
   ctx.fillStyle = '#6b4128'; ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(name, CX, y0 - 19.5);
 }
+// The mouse weathervane turns to face the wind now and then (one picture, mirrored).
 function vane(ctx, x, y, t) {
-  ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 26); ctx.stroke();
-  ctx.save(); ctx.translate(x, y - 24); ctx.scale(Math.cos(t * 0.4) > 0 ? 1 : -1, 1);
+  if (t == null) return;
+  art(ctx, 'vane', [-19, -36, 38, 38], paintVane, 0, x, y, Math.cos(t * 0.4) > 0 ? 1 : -1);
+}
+function paintVane(ctx) {
+  ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+  ctx.translate(0, -24);
   ell(ctx, 0, 0, 9, 4.5, '#3a3440'); circ(ctx, 8, -2, 3.5, '#3a3440'); circ(ctx, 5, -6, 3, '#3a3440');
   ctx.beginPath(); ctx.moveTo(-8, 0); ctx.quadraticCurveTo(-18, -2, -16, -9); ctx.stroke();
-  ctx.restore();
 }
 function glowWindow(ctx, x, y, r, tod, frame = '#6b4128') {
   circ(ctx, x, y, r + 4, frame); circ(ctx, x, y, r, tod.dark > 0.3 ? '#ffd98a' : '#bfe3f2');
@@ -66,15 +73,7 @@ function windmillRoof(ctx, y0, t, tod, name, opts) {
   ctx.fillStyle = 'rgba(160,140,110,0.35)'; for (let y = my + 6; y < y0 - 8; y += 6) ctx.fillRect(mx - 12, y, 24, 0.8);
   fillRR(ctx, mx - 3.5, y0 - 22, 7, 14, 3.5, '#7a4b2e');
   ctx.fillStyle = '#b5523b'; ctx.beginPath(); ctx.moveTo(mx - 12, my + 2); ctx.lineTo(mx, my - 14); ctx.lineTo(mx + 12, my + 2); ctx.closePath(); ctx.fill();
-  ctx.save(); ctx.translate(mx, my - 4); ctx.rotate(t * 0.7);
-  for (let k = 0; k < 4; k++) {
-    ctx.rotate(Math.PI / 2);
-    ctx.fillStyle = '#8a5a3a'; ctx.fillRect(-1.2, 0, 2.4, 40);
-    ctx.fillStyle = '#f7efe0'; ctx.fillRect(1.2, 8, 9, 30);
-    ctx.strokeStyle = '#c9b89a'; ctx.lineWidth = 0.6; for (let j = 12; j < 38; j += 5) { ctx.beginPath(); ctx.moveTo(1.2, j); ctx.lineTo(10.2, j); ctx.stroke(); }
-  }
-  circ(ctx, 0, 0, 3.5, '#5b3a26');
-  ctx.restore();
+  if (t != null) windmillSails(ctx, y0, t);
   roofSign(ctx, y0, name);
   vane(ctx, CX, peak, t);
   return { ...ch, eaves: [...edge(...L0, CX, peak), ...edge(CX, peak, ...R0).slice(1)], peak };
@@ -105,16 +104,7 @@ function coveRoof(ctx, y0, t, tod, name, opts) {
   fillRR(ctx, lx - 7, peak - 40, 14, 14, 2, tod.dark > 0.3 ? '#fff3b0' : '#bfe3f2');
   ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(lx, peak - 40); ctx.lineTo(lx, peak - 26); ctx.stroke();
   ctx.fillStyle = '#d9534f'; ctx.beginPath(); ctx.moveTo(lx - 9, peak - 40); ctx.quadraticCurveTo(lx, peak - 54, lx + 9, peak - 40); ctx.closePath(); ctx.fill();
-  if (tod.dark > 0.3) {
-    const a = t * 0.9;
-    ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    [1, -1].forEach((dir) => {
-      const g = ctx.createLinearGradient(lx, peak - 33, lx + Math.cos(a) * 200 * dir, peak - 33);
-      g.addColorStop(0, `rgba(255,240,170,${0.4 * tod.dark})`); g.addColorStop(1, 'rgba(255,240,170,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(lx, peak - 33); ctx.lineTo(lx + Math.cos(a) * 200 * dir, peak - 57); ctx.lineTo(lx + Math.cos(a) * 200 * dir, peak - 9); ctx.closePath(); ctx.fill();
-    });
-    ctx.restore();
-  }
+  if (tod.dark > 0.3 && t != null) coveBeam(ctx, y0, t, tod);
   // life ring on the gable
   circ(ctx, BX1 - 36, y0 - 20, 8, '#f4efe6'); circ(ctx, BX1 - 36, y0 - 20, 4.4, '#4f6f90');
   ctx.strokeStyle = '#d9534f'; ctx.lineWidth = 3; [0.3, 1.9, 3.5, 5.1].forEach((a) => { ctx.beginPath(); ctx.arc(BX1 - 36, y0 - 20, 6.2, a, a + 0.5); ctx.stroke(); });
@@ -146,7 +136,7 @@ function pondRoof(ctx, y0, t, tod, name, opts) {
   // paper lanterns along the eaves
   [BX0 - 6, BX0 + 26, BX1 - 26, BX1 + 6].forEach((x, k) => {
     const y = y0 + 8; ctx.strokeStyle = '#3a2a20'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.stroke();
-    ell(ctx, x, y + 10 + Math.sin(t * 1.5 + k) * 0.6, 5, 6.5, tod.dark > 0.3 ? '#ffb070' : '#e0604a');
+    ell(ctx, x, y + 10 + Math.sin(k) * 0.6, 5, 6.5, tod.dark > 0.3 ? '#ffb070' : '#e0604a');
     fillRR(ctx, x - 2.5, y + 3, 5, 1.6, 0.5, '#3a2a20'); fillRR(ctx, x - 2.5, y + 16, 5, 1.6, 0.5, '#3a2a20');
   });
   roofSign(ctx, y0, name);
@@ -175,7 +165,7 @@ function castleRoof(ctx, y0, t, tod, name, opts) {
     ctx.fillStyle = 'rgba(0,0,0,0.14)'; ctx.beginPath(); ctx.moveTo(x, tt - 44); ctx.lineTo(x + w / 2 + 5, tt + 2); ctx.lineTo(x + 6, tt + 2); ctx.closePath(); ctx.fill();
     if (opts.winter) { ctx.fillStyle = '#f7fafc'; ctx.beginPath(); ctx.moveTo(x - 8, tt - 30); ctx.lineTo(x, tt - 44); ctx.lineTo(x + 8, tt - 30); ctx.quadraticCurveTo(x, tt - 26, x - 8, tt - 30); ctx.fill(); }
     ctx.strokeStyle = '#3a3440'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, tt - 44); ctx.lineTo(x, tt - 62); ctx.stroke();
-    ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(x, tt - 62); ctx.lineTo(x + 14 + Math.sin(t * 3 + x) * 2, tt - 57); ctx.lineTo(x, tt - 52); ctx.fill();
+    if (t != null) castleFlag(ctx, x, tt, t);
   };
   turret(BX0 + 4); turret(BX1 - 4);
   roofSign(ctx, y0, name);
@@ -199,6 +189,46 @@ function snowRidge(ctx, L0, P, R0) {
   ctx.fillStyle = '#f7fafc';
   ctx.beginPath(); ctx.moveTo(L0[0] - 2, L0[1] - 2); ctx.lineTo(P[0], P[1] - 4); ctx.lineTo(R0[0] + 2, R0[1] - 2);
   ctx.lineTo(R0[0] - 10, R0[1] - 8); ctx.lineTo(P[0], P[1] + 12); ctx.lineTo(L0[0] + 10, L0[1] - 8); ctx.closePath(); ctx.fill();
+}
+
+function windmillSails(ctx, y0, t) {
+  const mx = BX1 - 58; const my = y0 - ROOF_H + 50;
+  ctx.save(); ctx.translate(mx, my - 4); ctx.rotate(t * 0.7);
+  art(ctx, 'roofSails', [-45, -45, 90, 90], paintSails, 0);
+  ctx.restore();
+}
+function paintSails(ctx) {
+  for (let k = 0; k < 4; k++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = '#8a5a3a'; ctx.fillRect(-1.2, 0, 2.4, 40);
+    ctx.fillStyle = '#f7efe0'; ctx.fillRect(1.2, 8, 9, 30);
+    ctx.strokeStyle = '#c9b89a'; ctx.lineWidth = 0.6; ctx.beginPath(); for (let j = 12; j < 38; j += 5) { ctx.moveTo(1.2, j); ctx.lineTo(10.2, j); } ctx.stroke();
+  }
+  circ(ctx, 0, 0, 3.5, '#5b3a26');
+}
+function coveBeam(ctx, y0, t, tod) {
+  const lx = CX; const peak = y0 - 80; const a = t * 0.9;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  [1, -1].forEach((dir) => {
+    const g = ctx.createLinearGradient(lx, peak - 33, lx + Math.cos(a) * 200 * dir, peak - 33);
+    g.addColorStop(0, `rgba(255,240,170,${0.4 * tod.dark})`); g.addColorStop(1, 'rgba(255,240,170,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(lx, peak - 33); ctx.lineTo(lx + Math.cos(a) * 200 * dir, peak - 57); ctx.lineTo(lx + Math.cos(a) * 200 * dir, peak - 9); ctx.closePath(); ctx.fill();
+  });
+  ctx.restore();
+}
+function castleFlag(ctx, x, tt, t) {
+  ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(x, tt - 62); ctx.lineTo(x + 14 + Math.sin(t * 3 + x) * 2, tt - 57); ctx.lineTo(x, tt - 52); ctx.fill();
+}
+
+// The moving parts of a roof painted still (t = null): drawn every frame on top of its picture.
+export function drawRoofLive(ctx, scene, y0, t, tod) {
+  switch (scene) {
+    case 'windmill': windmillSails(ctx, y0, t); vane(ctx, CX, y0 - ROOF_H + 6, t); break;
+    case 'cove': if (tod.dark > 0.3) coveBeam(ctx, y0, t, tod); vane(ctx, CX, y0 - 132, t); break;
+    case 'pond': vane(ctx, CX, y0 - 98, t); break;
+    case 'castle': castleFlag(ctx, BX0 + 4, y0 - 104, t); castleFlag(ctx, BX1 - 4, y0 - 104, t); vane(ctx, CX, y0 - 59, t); break;
+    default: vane(ctx, CX, y0 - ROOF_H, t); // Meadow Burrow's cottage
+  }
 }
 
 export function drawBuildingRoof(ctx, scene, y0, t, tod, name, opts) {

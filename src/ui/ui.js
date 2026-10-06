@@ -8,6 +8,7 @@ import { ROOMS, BOOKS } from '../data/rooms.js';
 import * as E from '../core/economy.js';
 import { fmt, fmtTime } from '../core/format.js';
 import { sfx, setSfxEnabled } from '../audio/sfx.js';
+import { setVoicesEnabled } from '../audio/voices.js';
 import { music } from '../audio/music.js';
 import { Ads } from '../ads/ads.js';
 import { wipeSave } from '../core/save.js';
@@ -18,6 +19,13 @@ import { WING, WINGS, WING_W, STOREY_H } from '../data/wings.js';
 import { HALLS, cellY, cellX, CELL_W, DEEP_ROWS } from '../data/deep.js';
 import { BIZ_BY_ID } from '../data/mole.js';
 import { wingX, wingHeight } from '../world/wingArt.js';
+import { Reveal } from './reveal.js';
+
+// The HUD is only written to when a value actually changes: every write makes the browser lay out
+// and repaint it, which on a phone costs about as much as drawing a good part of the world.
+const setText = (el, v) => { v = String(v); if (el.textContent !== v) el.textContent = v; };
+const setStyle = (el, prop, v) => { if (el.style[prop] !== v) el.style[prop] = v; };
+const setAttr = (el, name, v) => { if (el.getAttribute(name) !== v) el.setAttribute(name, v); };
 
 export class UI {
   constructor(game, world) {
@@ -42,6 +50,7 @@ export class UI {
       const next = SEASONS[(cal.idx + 1) % 4];
       toast(`${w.season.icon} ${w.season.name}, Mouse Year ${cal.year} · ${next.icon} ${next.name} in ${fmtTime(cal.left)}`);
     });
+    this.reveal = new Reveal(this);
     this.bind();
     this.listen();
     this.applySettings();
@@ -189,7 +198,7 @@ export class UI {
   applySettings() {
     const st = this.game.s.settings;
     music.setEnabled(st.music);
-    setSfxEnabled(st.sfx);
+    setSfxEnabled(st.sfx); setVoicesEnabled(st.sfx);
     setHaptics(st.haptics);
   }
 
@@ -506,6 +515,7 @@ export class UI {
 
   onStoryDone(id) {
     this.refresh();
+    if (id === 'intro' && this.afterIntro) { const f = this.afterIntro; this.afterIntro = null; f(); }
     if (id === 'deepEnd') setTimeout(() => this.screens.talesReward(), 400);
     if (id === 'deep0') setTimeout(() => this.panToDeep(), 300);
   }
@@ -516,7 +526,7 @@ export class UI {
     if (s.coins < this.shownCoins) this.shownCoins = s.coins;
     else this.shownCoins += (s.coins - this.shownCoins) * Math.min(1, dt * 9);
     if (s.coins - this.shownCoins < Math.max(1, s.coins * 0.0005)) this.shownCoins = s.coins;
-    $('#coins').textContent = fmt(this.shownCoins);
+    setText($('#coins'), fmt(this.shownCoins));
     this.updateThief(dt);
 
     this.acc += dt;
@@ -527,15 +537,15 @@ export class UI {
 
   refresh() {
     const g = this.game; const s = g.s;
-    $('#ips').textContent = `+${fmt(g.income())}/s`;
-    $('#cheese').textContent = fmt(s.cheese);
-    $('#repLvl').textContent = s.rep;
-    $('#repRing').style.strokeDashoffset = String(106.8 * (1 - s.xp / E.repXpNeeded(s.rep)));
+    setText($('#ips'), `+${fmt(g.income())}/s`);
+    setText($('#cheese'), fmt(s.cheese));
+    setText($('#repLvl'), s.rep);
+    setStyle($('#repRing'), 'strokeDashoffset', (106.8 * (1 - s.xp / E.repXpNeeded(s.rep))).toFixed(1));
 
     // quest
     const q = s.quest; const p = g.questProgress();
-    $('#qText').textContent = q ? q.text : '';
-    $('#qBar').style.width = `${(p.cur / p.target) * 100}%`;
+    setText($('#qText'), q ? q.text : '');
+    setStyle($('#qBar'), 'width', `${((p.cur / p.target) * 100).toFixed(1)}%`);
     const rw = q?.reward || {};
     const qAd = p.done && s.questIdx >= 4 && g.offerReady('questX2', 10) ? '<span class="q-ad">📺×2</span>' : '';
     const qHtml = p.done ? `${qAd}<span class="q-claim">Claim!</span>` : rw.cheese ? `<span class="ico ico-cheese" style="width:16px;height:16px"></span>${rw.cheese}` : `<span class="ico ico-coin" style="width:16px;height:16px"></span>${rw.coins ? fmt(rw.coins) : ''}`;
@@ -546,8 +556,8 @@ export class UI {
     const cap = g.jarCap();
     const lvl = Math.min(1, (s.jar + g.jarPending()) / cap);
     const shown = s.jar > 0 ? Math.max(0.2, Math.sqrt(lvl)) : 0; // sqrt so small amounts still look rewarding
-    $('#jarFill').setAttribute('transform', `translate(0,${76 - shown * 72})`);
-    $('#jarAmt').textContent = fmt(s.jar);
+    setAttr($('#jarFill'), 'transform', `translate(0,${(76 - shown * 72).toFixed(1)})`);
+    setText($('#jarAmt'), fmt(s.jar));
     const jb = $('#jarBtn');
     jb.classList.toggle('full', g.jarFull);
     jb.classList.toggle('ready', !g.jarFull && lvl > 0.25);
@@ -556,7 +566,7 @@ export class UI {
     // story hour
     const sh = g.storyHourLeft();
     $('#storyBtn').classList.toggle('active', sh > 0);
-    $('#storyTime').textContent = sh > 0 ? fmtTime(sh) : 'Story Hour';
+    setText($('#storyTime'), sh > 0 ? fmtTime(sh) : 'Story Hour');
 
     const season = this.world.season; const wx = this.world.ambient.weather;
     const weatherIcon = wx.kind === 'rain' ? ' 🌧️' : wx.kind === 'snow' ? ' 🌨️' : wx.kind === 'cloudy' ? ' ☁️' : wx.rainbow > 0 ? ' 🌈' : '';
@@ -567,8 +577,8 @@ export class UI {
     if (sc.querySelector('.sc-line').textContent !== line) sc.querySelector('.sc-line').textContent = line;
     const festLine = fest ? `${fest.icon} ${fest.name}` : '';
     if (sc.querySelector('.sc-fest').textContent !== festLine) sc.querySelector('.sc-fest').textContent = festLine;
-    sc.querySelector('.sc-bar b').style.width = `${Math.round(cal.progress * 100)}%`;
-    sc.dataset.season = season.key;
+    setStyle(sc.querySelector('.sc-bar b'), 'width', `${Math.round(cal.progress * 100)}%`);
+    if (sc.dataset.season !== season.key) sc.dataset.season = season.key;
     this.seasonChip.classList.toggle('fest', !!fest);
     this.seasonChip.classList.toggle('has-gift', g.festGiftReady());
     // mystery gift on the doorstep
@@ -577,6 +587,7 @@ export class UI {
     if (!giftDue) this.giftNotified = false;
 
     if (this.sheet.isOpen) this.sheet.update();
+    this.reveal.update();
     this.renderChips();
     this.renderTasks();
     this.refreshBadges();
@@ -625,12 +636,12 @@ export class UI {
     if (d.open) set('#deepBtn', g.freeCrews() > 0 && !d.tales);
     const owned = E.booksOwned(s);
     set('#albumBtn', owned > this.seenBooks);
-    $('#albumBtn small').textContent = `${owned}/${BOOKS.length}`;
+    setText($('#albumBtn small'), `${owned}/${BOOKS.length}`);
     const next = g.nextFloor();
     const full = (g.siteFull() || !!s.move.end) && next < 0 && g.constructing() < 0;
     set('#topBtn', (next > 0 && g.constructing() < 0 && s.coins >= ROOMS[next].unlock) || (full && (g.canBuyLand() || g.moveReady())));
     $('#topBtn').classList.toggle('hidden', next < 0 && g.constructing() < 0 && !full);
-    $('#topBtn small').textContent = g.constructing() >= 0 ? 'Building' : full ? 'Move' : 'Build';
+    setText($('#topBtn small'), g.constructing() >= 0 ? 'Building' : full ? 'Move' : 'Build');
     const ico = full ? '🚚' : '🎈';
     if ($('#topBtn .rb-ico').textContent !== ico) $('#topBtn .rb-ico').textContent = ico;
     const f = this.world.focusedRoom();
@@ -643,7 +654,7 @@ export class UI {
     const ptr = $('#pointer');
     const g = this.game; const s = g.s; const q = s.quest;
     let target = null;
-    if (q && s.questIdx < 12 && !modalOpen() && !this.story.open) {
+    if (q && s.questIdx < 12 && !modalOpen() && !this.story.open && !this.cinematic) {
       const p = g.questProgress();
       if (p.done) target = this.sheet.isOpen ? null : $('#quest');
       else {

@@ -8,7 +8,7 @@
 // Coordinates are wing-interior local: x 0..184 from the inner left wall, y per storey 0..130.
 import { drawMouse, fillRR, ell, circ, star } from './draw.js';
 import { STOREY_H, CLUBS, wingStoreys } from '../data/wings.js';
-import { FURS, CLOTH, HATS } from '../data/visitors.js';
+import { WARDROBE } from '../data/visitors.js';
 import { SIDE, INNER_W, HALL_CHAIRS, MUSEUM_SPOTS, wingX } from './wingArt.js';
 import { glow } from './glow.js';
 
@@ -19,16 +19,11 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 let seed = 1;
 
+// visitors wear the town's outfits (see WARDROBE); children wear a cap, a bow or nothing
 function look(small = false) {
-  const f = pick(FURS);
-  return {
-    ...f,
-    scarf: Math.random() < 0.5 ? pick(CLOTH) : null,
-    vest: Math.random() < 0.25 ? pick(CLOTH) : null,
-    hat: small ? pick(['cap', 'bow', null]) : pick(HATS), hatCol: pick(CLOTH),
-    glasses: !small && Math.random() < 0.15,
-    s: small ? 0.58 : 0.74 + Math.random() * 0.08,
-  };
+  const w = pick(WARDROBE);
+  if (small) return { fur: w.fur, belly: w.belly, scarf: w.scarf, hat: ['cap', 'bow', null][w.idx % 3], hatCol: w.hatCol, idx: w.idx, s: 0.58 };
+  return { ...w, book: undefined, s: 0.74 + Math.random() * 0.08 };
 }
 
 // Where visitors go in each wing, and what they do there. `need: [u, k]` = only once that piece of

@@ -17,6 +17,11 @@ export class RoomSheet {
     this.game = ui.game;
     this.el = $('#sheet');
     this.i = -1;
+    // The tap that opens the sheet is followed by a "click" a moment later at the same spot,
+    // which could land on one of its buttons: clicks only count after a press on the sheet.
+    this.pressed = false;
+    this.el.addEventListener('pointerdown', () => { this.pressed = true; }, true);
+    this.el.addEventListener('click', (e) => { if (!this.pressed && e.detail !== 0) { e.stopPropagation(); e.preventDefault(); } }, true);
     this.mode = 1;
     this.isOpen = false;
     this.refs = null;
@@ -24,6 +29,7 @@ export class RoomSheet {
 
   open(i) {
     if (!this.game.s.rooms[i]?.built) return;
+    if (!this.isOpen) this.pressed = false;
     this.i = i;
     this.render();
     this.el.classList.add('open');

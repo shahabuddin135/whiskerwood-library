@@ -4,6 +4,7 @@ import { CHARACTERS, STORY } from '../data/story.js';
 import { portrait } from './portraits.js';
 import { modalOpen } from './modals.js';
 import { sfx } from '../audio/sfx.js';
+import { voices, moodOf } from '../audio/voices.js';
 
 export class StoryUI {
   constructor(ui) {
@@ -54,7 +55,7 @@ export class StoryUI {
   }
 
   tryStart() {
-    if (this.active || !this.queue.length || modalOpen() || this.ui.sheet.isOpen) return;
+    if (this.active || !this.queue.length || modalOpen() || this.ui.sheet.isOpen || this.ui.cinematic) return;
     const id = this.queue.shift();
     const ch = STORY.find((c) => c.id === id);
     if (!ch || this.game.storySeen(id)) return;
@@ -88,10 +89,13 @@ export class StoryUI {
     clearInterval(this.typer);
     let n = 0;
     this.typing = true;
+    // each character speaks in their own little voice as the words appear (audio/voices.js)
+    const mood = moodOf(text);
+    voices.emote(who, mood);
     this.typer = setInterval(() => {
-      n += 2;
+      const from = n; n += 2;
       out.textContent = text.slice(0, n);
-      if (n % 6 === 0) sfx.dialog();
+      voices.say(who, text.slice(from, n), mood, from, text.length);
       if (n >= text.length) { clearInterval(this.typer); this.typing = false; }
     }, 28);
     this.fullText = text;

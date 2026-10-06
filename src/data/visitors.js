@@ -7,6 +7,22 @@ export const FURS = [
 export const CLOTH = ['#d9774b', '#6a9f58', '#4f7cac', '#c0504d', '#e9b949', '#9b6fb0', '#3f7f6f', '#e58fa8', '#7a8fa6'];
 export const HATS = [null, null, null, null, 'beret', 'bow', 'flower', 'cap', 'bobble'];
 
+// The town's everyday outfits. Visitors wear one of these instead of a fresh random mix, so each
+// outfit's cached pictures get reused (see world/sprites.js): a busy library is full of regulars.
+export const WARDROBE = (() => {
+  let a = 20260930; // a fixed seed: the same town every time
+  const R = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = (arr) => arr[Math.floor(R() * arr.length)];
+  return Array.from({ length: 28 }, (_, idx) => ({
+    ...FURS[idx % FURS.length], idx,
+    scarf: R() < 0.55 ? pick(CLOTH) : null,
+    vest: R() < 0.3 ? pick(CLOTH) : null,
+    hat: pick(HATS), hatCol: pick(CLOTH),
+    glasses: R() < 0.18,
+    book: R() < 0.5 ? pick(CLOTH) : null,
+  }));
+})();
+
 // Special guests.
 export const CELEBS = [
   { name: 'Sir Nibbleton', line: 'Charmed. I only read books with gold-edged pages.', look: { fur: '#c9b7a3', belly: '#f3ebe1', hat: 'tophat', scarf: '#7a2f3a', monocle: true } },

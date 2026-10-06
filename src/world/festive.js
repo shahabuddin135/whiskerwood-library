@@ -4,100 +4,125 @@
 import { L } from './layout.js';
 import { glow } from './glow.js';
 import { fillRR, ell, circ, star } from './draw.js';
+import { art } from './sprites.js';
 
 /* ---------------- small shapes ---------------- */
-function crescent(ctx, x, y, r, col) {
-  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.arc(x + r * 0.45, y - r * 0.25, r * 0.85, 0, Math.PI * 2);
-  ctx.fillStyle = col; ctx.fill('evenodd'); ctx.restore();
+// Each decoration is a cached picture (see sprites.js), painted once and then stamped: a window
+// full of lanterns on every floor would otherwise be hundreds of shapes a frame. Flames flicker
+// on top, live.
+function crescent(ctx, x, y, r, col) { art(ctx, 'f:cres|' + col, [-1.1, -1.2, 2.6, 2.3], paintCrescent, col, x, y, r); }
+function paintCrescent(ctx, col) {
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.arc(0.45, -0.25, 0.85, 0, Math.PI * 2);
+  ctx.fillStyle = col; ctx.fill('evenodd');
 }
-function heart(ctx, x, y, s, col) {
-  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x, y + s * 1.1);
-  ctx.bezierCurveTo(x - s * 1.6, y - s * 0.2, x - s * 0.8, y - s * 1.3, x, y - s * 0.4);
-  ctx.bezierCurveTo(x + s * 0.8, y - s * 1.3, x + s * 1.6, y - s * 0.2, x, y + s * 1.1); ctx.fill();
+function heart(ctx, x, y, s, col) { art(ctx, 'f:heart|' + col, [-1.7, -1.3, 3.4, 2.5], paintHeart, col, x, y, s); }
+function paintHeart(ctx, col) {
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 1.1);
+  ctx.bezierCurveTo(-1.6, -0.2, -0.8, -1.3, 0, -0.4);
+  ctx.bezierCurveTo(0.8, -1.3, 1.6, -0.2, 0, 1.1); ctx.fill();
 }
-function fanous(ctx, x, y, s, lit) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+function fanous(ctx, x, y, s, lit) { art(ctx, 'f:fanous|' + (lit ? 1 : 0), [-6, -5, 12, 23], paintFanous, lit, x, y, s); }
+function paintFanous(ctx, lit) {
   ctx.fillStyle = '#c9a557'; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(0, -4); ctx.lineTo(3, 0); ctx.fill();
   fillRR(ctx, -5, 0, 10, 12, 2, lit ? '#ffd26a' : '#f2c14e');
   ctx.fillStyle = 'rgba(200,80,40,0.75)'; ctx.fillRect(-3.5, 2, 2.2, 8); ctx.fillStyle = 'rgba(40,140,110,0.75)'; ctx.fillRect(1.3, 2, 2.2, 8);
   ctx.fillStyle = '#c9a557'; ctx.beginPath(); ctx.moveTo(-5, 12); ctx.lineTo(0, 17); ctx.lineTo(5, 12); ctx.fill();
-  ctx.restore();
 }
-function pumpkin(ctx, x, y, r, face = true, lit = false) {
-  ell(ctx, x, y, r * 1.2, r, '#f28c28'); ctx.strokeStyle = '#c96a16'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(x, y, r * 0.45, r, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = '#5b7f4d'; ctx.fillRect(x - 1, y - r - 3, 2, 3.4);
-  if (face) { ctx.fillStyle = lit ? '#ffe07a' : '#6b3a10'; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y - r * 0.2); ctx.lineTo(x - r * 0.3, y - r * 0.5); ctx.lineTo(x - r * 0.15, y - r * 0.15); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + r * 0.55, y - r * 0.2); ctx.lineTo(x + r * 0.3, y - r * 0.5); ctx.lineTo(x + r * 0.15, y - r * 0.15); ctx.fill(); ctx.fillRect(x - r * 0.5, y + r * 0.25, r, r * 0.18); }
+// painted at r = 6 and scaled
+function pumpkin(ctx, x, y, r, face = true, lit = false) { art(ctx, `f:pumpkin|${face ? 1 : 0}${lit ? 1 : 0}`, [-8, -10, 16, 17], paintPumpkin, face ? (lit ? 2 : 1) : 0, x, y, r / 6); }
+function paintPumpkin(ctx, a) {
+  const r = 6; const face = a > 0; const lit = a > 1;
+  ell(ctx, 0, 0, r * 1.2, r, '#f28c28'); ctx.strokeStyle = '#c96a16'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(0, 0, r * 0.45, r, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#5b7f4d'; ctx.fillRect(-1, -r - 3, 2, 3.4);
+  if (face) { ctx.fillStyle = lit ? '#ffe07a' : '#6b3a10'; ctx.beginPath(); ctx.moveTo(-r * 0.55, -r * 0.2); ctx.lineTo(-r * 0.3, -r * 0.5); ctx.lineTo(-r * 0.15, -r * 0.15); ctx.fill(); ctx.beginPath(); ctx.moveTo(r * 0.55, -r * 0.2); ctx.lineTo(r * 0.3, -r * 0.5); ctx.lineTo(r * 0.15, -r * 0.15); ctx.fill(); ctx.fillRect(-r * 0.5, r * 0.25, r, r * 0.18); }
 }
 // Round red paper lantern with a gold cap and tassel (Lunar New Year).
-function redLantern(ctx, x, y, s, lit) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+function redLantern(ctx, x, y, s, lit) { art(ctx, 'f:lantern|' + (lit ? 1 : 0), [-8, -2, 16, 21], paintRedLantern, lit, x, y, s); }
+function paintRedLantern(ctx, lit) {
   fillRR(ctx, -3, -1, 6, 2.4, 1, '#f2c14e');
   ell(ctx, 0, 6, 7, 6, lit ? '#ff4a3a' : '#d62828');
   ctx.strokeStyle = 'rgba(120,20,20,0.55)'; ctx.lineWidth = 0.6;
-  [-4, 0, 4].forEach((dx) => { ctx.beginPath(); ctx.ellipse(dx * 0.4, 6, Math.abs(dx) > 0 ? 4.5 : 1.2, 6, 0, 0, Math.PI * 2); ctx.stroke(); });
+  ctx.beginPath(); [-4, 0, 4].forEach((dx) => { ctx.moveTo(dx * 0.4 + (Math.abs(dx) > 0 ? 4.5 : 1.2), 6); ctx.ellipse(dx * 0.4, 6, Math.abs(dx) > 0 ? 4.5 : 1.2, 6, 0, 0, Math.PI * 2); }); ctx.stroke();
   fillRR(ctx, -3, 11, 6, 2.2, 1, '#f2c14e');
   ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(0, 13); ctx.lineTo(0, 18); ctx.stroke();
-  ctx.restore();
 }
 // Little clay oil lamp with a flickering flame (Diwali).
 function diya(ctx, x, y, s, t, k = 0) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  art(ctx, 'f:diya', [-6, -4, 12, 7], paintDiya, 0, x, y, s);
+  const fl = 1 + Math.sin(t * 12 + k * 2.1) * 0.18;
+  ell(ctx, x + 2.5 * s, y - 6 * fl * s, 1.5 * s, 3 * fl * s, '#ffcf5a'); ell(ctx, x + 2.5 * s, y - 5.2 * fl * s, 0.7 * s, 1.6 * fl * s, '#fff6d0');
+}
+function paintDiya(ctx) {
   ctx.fillStyle = '#b5523b'; ctx.beginPath(); ctx.moveTo(-5, -2); ctx.quadraticCurveTo(0, 5, 5, -2); ctx.lineTo(3.5, -2.8); ctx.lineTo(-5, -2.8); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#e8913a'; ctx.fillRect(-4.6, -3.4, 9, 1);
-  const fl = 1 + Math.sin(t * 12 + k * 2.1) * 0.18;
-  ell(ctx, 2.5, -6 * fl, 1.5, 3 * fl, '#ffcf5a'); ell(ctx, 2.5, -5.2 * fl, 0.7, 1.6 * fl, '#fff6d0');
-  ctx.restore();
 }
-function egg(ctx, x, y, s, base, band) {
-  ell(ctx, x, y, 3.2 * s, 4.2 * s, base);
-  ctx.save(); ctx.beginPath(); ctx.ellipse(x, y, 3.2 * s, 4.2 * s, 0, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = band; ctx.fillRect(x - 4 * s, y - 0.9 * s, 8 * s, 1.6 * s);
-  for (let k = -1; k <= 1; k++) circ(ctx, x + k * 1.6 * s, y - 2.4 * s, 0.55 * s, band);
+function egg(ctx, x, y, s, base, band) { art(ctx, `f:egg|${base}|${band}`, [-3.6, -4.6, 7.2, 9.2], paintEgg, [base, band], x, y, s); }
+function paintEgg(ctx, [base, band]) {
+  ell(ctx, 0, 0, 3.2, 4.2, base);
+  ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 3.2, 4.2, 0, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = band; ctx.fillRect(-4, -0.9, 8, 1.6);
+  for (let k = -1; k <= 1; k++) circ(ctx, k * 1.6, -2.4, 0.55, band);
   ctx.restore();
 }
 // Nine-branched menorah; `lit` candles (plus the shamash) burn.
 function menorah(ctx, x, y, s, lit, t) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  art(ctx, 'f:menorah', [-12, -18, 24, 20], paintMenorah, 0, x, y, s);
+  const xs = [-10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8, 10.4];
+  ctx.fillStyle = '#ffcf5a'; ctx.beginPath(); // every flame in one shape
+  xs.forEach((cx, k) => {
+    const shamash = k === 4; const cy = shamash ? -13 : -10;
+    const n = k < 4 ? 8 - k : k - 4; // light from the right, one more each night
+    if (shamash || n <= lit) { const fl = 1 + Math.sin(t * 11 + k) * 0.2; ctx.moveTo(x + (cx + 0.9) * s, y + (cy - 5.5 * fl) * s); ctx.ellipse(x + cx * s, y + (cy - 5.5 * fl) * s, 0.9 * s, 1.7 * fl * s, 0, 0, Math.PI * 2); }
+  });
+  ctx.fill();
+}
+function paintMenorah(ctx) {
   ctx.fillStyle = '#c9a227'; ctx.fillRect(-1, -10, 2, 10); fillRR(ctx, -5, -1, 10, 2, 1, '#c9a227');
   ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 1;
   for (let k = 1; k <= 4; k++) { ctx.beginPath(); ctx.arc(0, -10, k * 2.6, 0, Math.PI); ctx.stroke(); }
-  const xs = [-10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8, 10.4];
-  xs.forEach((cx, k) => {
-    const shamash = k === 4; const cy = shamash ? -13 : -10;
-    ctx.fillStyle = '#e8f0ff'; ctx.fillRect(cx - 0.6, cy - 4, 1.2, 4);
-    const n = k < 4 ? 8 - k : k - 4; // light from the right, one more each night
-    if (shamash || n <= lit) { const fl = 1 + Math.sin(t * 11 + k) * 0.2; ell(ctx, cx, cy - 5.5 * fl, 0.9, 1.7 * fl, '#ffcf5a'); }
-  });
-  ctx.restore();
+  [-10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8, 10.4].forEach((cx, k) => { const cy = k === 4 ? -13 : -10; ctx.fillStyle = '#e8f0ff'; ctx.fillRect(cx - 0.6, cy - 4, 1.2, 4); });
 }
 function dreidel(ctx, x, y, s, t) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(t * 3) * 0.25); ctx.scale(s, s);
-  ctx.fillStyle = '#3a6ea5'; ctx.beginPath(); ctx.moveTo(-4, -6); ctx.lineTo(4, -6); ctx.lineTo(4, 0); ctx.lineTo(0, 5); ctx.lineTo(-4, 0); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#9ec5f0'; ctx.fillRect(-0.8, -10, 1.6, 4); ctx.fillStyle = '#f2d27a'; ctx.fillRect(-2, -3.5, 4, 1);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(t * 3) * 0.25);
+  art(ctx, 'f:dreidel', [-5, -11, 10, 17], paintDreidel, 0, 0, 0, s);
   ctx.restore();
 }
-// Colourful rangoli on the ground, seen at a slight angle.
-function rangoli(ctx, x, y, r, t) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(1, 0.42);
+function paintDreidel(ctx) {
+  ctx.fillStyle = '#3a6ea5'; ctx.beginPath(); ctx.moveTo(-4, -6); ctx.lineTo(4, -6); ctx.lineTo(4, 0); ctx.lineTo(0, 5); ctx.lineTo(-4, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#9ec5f0'; ctx.fillRect(-0.8, -10, 1.6, 4); ctx.fillStyle = '#f2d27a'; ctx.fillRect(-2, -3.5, 4, 1);
+}
+// Colourful rangoli on the ground, seen at a slight angle (painted at r = 14).
+function rangoli(ctx, x, y, r) { art(ctx, 'f:rangoli', [-15, -7, 30, 14], paintRangoli, 0, x, y, r / 14); }
+function paintRangoli(ctx) {
+  const r = 14; ctx.scale(1, 0.42);
   const rings = ['#e0405f', '#ff9f1c', '#f2c14e', '#9b5de5', '#3fa36b'];
   rings.forEach((c, k) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, r * (1 - k * 0.18), 0, Math.PI * 2); ctx.fill(); });
   for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; ell(ctx, Math.cos(a) * r * 0.62, Math.sin(a) * r * 0.62, r * 0.2, r * 0.09, '#fff6e0', a); }
   circ(ctx, 0, 0, r * 0.12, '#fff6e0');
-  ctx.restore();
 }
+// A small round light bulb (strings of fairy lights, fireworks sparks).
+function bulb(ctx, x, y, r, col) { art(ctx, 'f:bulb|' + col, [-1.1, -1.1, 2.2, 2.2], paintBulb, col, x, y, r); }
+function paintBulb(ctx, col) { circ(ctx, 0, 0, 1, col); }
+function bulbOval(ctx, x, y, rx, ry, col) { art(ctx, 'f:oval|' + col, [-1.1, -1.6, 2.2, 3.2], paintOval, col, x, y, rx); void ry; }
+function paintOval(ctx, col) { ell(ctx, 0, 0, 1, 1.5, col); }
 // Real festivals follow the calendar; Mouse Calendar ones are short. Either way: 0 → 1 through it.
 const festProgress = (fest) => (fest.start && fest.end ? Math.max(0, Math.min(1, (Date.now() - fest.start) / (fest.end - fest.start))) : 0.5);
+// What else changes a festival's decorations (for their cached pictures): the candles lit so far.
+export const festKey = (fest) => (fest.id === 'hanukkah' ? 1 + Math.floor(festProgress(fest) * 8) : 0);
 
-function gift(ctx, x, y, w, col, ribbon) {
-  fillRR(ctx, x - w / 2, y - w, w, w, 1, col); ctx.fillStyle = ribbon; ctx.fillRect(x - 1, y - w, 2, w); ctx.fillRect(x - w / 2, y - w * 0.55, w, 2);
-  ell(ctx, x - 2.5, y - w - 1.5, 2.6, 1.6, ribbon, -0.4); ell(ctx, x + 2.5, y - w - 1.5, 2.6, 1.6, ribbon, 0.4);
+// painted at w = 8 and scaled
+function gift(ctx, x, y, w, col, ribbon) { art(ctx, `f:gift|${col}|${ribbon}`, [-6, -12, 12, 13], paintGift, [col, ribbon], x, y, w / 8); }
+function paintGift(ctx, [col, ribbon]) {
+  const w = 8;
+  fillRR(ctx, -w / 2, -w, w, w, 1, col); ctx.fillStyle = ribbon; ctx.fillRect(-1, -w, 2, w); ctx.fillRect(-w / 2, -w * 0.55, w, 2);
+  ell(ctx, -2.5, -w - 1.5, 2.6, 1.6, ribbon, -0.4); ell(ctx, 2.5, -w - 1.5, 2.6, 1.6, ribbon, 0.4);
 }
 
 /* ---------------- inside every floor: the window ---------------- */
 export function drawFestRoom(ctx, fest, t, tod) {
   const wn = L.window; const cx = wn.x + wn.w / 2; const sill = wn.y + wn.h - 1;
   const lit = tod.dark > 0.3;
-  const lights = (cols) => { for (let k = 0; k < 9; k++) { const x = wn.x - 4 + k * 7.5; const y = wn.y - 2 + Math.sin((k / 8) * Math.PI) * 5; const on = 0.55 + 0.45 * Math.sin(t * 3 + k * 1.9); ctx.globalAlpha = on; circ(ctx, x, y, 1.6, cols[k % cols.length]); ctx.globalAlpha = 1; } };
+  const lights = (cols) => { for (let k = 0; k < 9; k++) { const x = wn.x - 4 + k * 7.5; const y = wn.y - 2 + Math.sin((k / 8) * Math.PI) * 5; const on = 0.55 + 0.45 * Math.sin(t * 3 + k * 1.9); ctx.globalAlpha = on; bulb(ctx, x, y, 1.6, cols[k % cols.length]); ctx.globalAlpha = 1; } };
   switch (fest.id) {
     case 'christmas':
       circ(ctx, cx, wn.y + 30, 11, '#2e8b57'); circ(ctx, cx, wn.y + 30, 6, 'rgba(0,0,0,0)');
@@ -138,12 +163,12 @@ export function drawFestRoom(ctx, fest, t, tod) {
     case 'lunar':
       [wn.x + 12, wn.x + wn.w - 12].forEach((x, k) => { const sw = Math.sin(t * 1.6 + k) * 1.5; ctx.strokeStyle = 'rgba(60,40,30,0.7)'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(x, wn.y + 4); ctx.lineTo(x + sw, wn.y + 12); ctx.stroke(); redLantern(ctx, x + sw, wn.y + 12, 1, lit); });
       // firecracker string
-      for (let k = 0; k < 6; k++) fillRR(ctx, cx - 1.5 + (k % 2 ? 1.5 : -1.5), wn.y + 18 + k * 4, 3, 3.4, 0.8, '#d62828');
+      ctx.fillStyle = '#d62828'; ctx.beginPath(); for (let k = 0; k < 6; k++) ctx.rect(cx - 1.5 + (k % 2 ? 1.5 : -1.5), wn.y + 18 + k * 4, 3, 3.4); ctx.fill();
       if (lit) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; [wn.x + 12, wn.x + wn.w - 12].forEach((x) => glow(ctx, x, wn.y + 18, 16, '255,90,60', 0.4)); ctx.restore(); }
       break;
     case 'diwali':
       // marigold garland across the top and diyas on the sill
-      for (let k = 0; k < 11; k++) { const x = wn.x - 4 + k * 6; const y = wn.y + 2 + Math.sin((k / 10) * Math.PI) * 7; circ(ctx, x, y, 2.1, k % 2 ? '#ff9f1c' : '#f2c14e'); }
+      for (let k = 0; k < 11; k++) { const x = wn.x - 4 + k * 6; const y = wn.y + 2 + Math.sin((k / 10) * Math.PI) * 7; bulb(ctx, x, y, 2.1, k % 2 ? '#ff9f1c' : '#f2c14e'); }
       [wn.x + 8, wn.x + 20, wn.x + wn.w - 20, wn.x + wn.w - 8].forEach((x, k) => diya(ctx, x, sill - 1, 0.85, t, k));
       if (lit) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(ctx, cx, sill - 6, 36, '255,190,90', 0.4, -Infinity, sill + 2); ctx.restore(); }
       break;
@@ -174,7 +199,7 @@ export function drawFestRoof(ctx, fest, roof, t, tod) {
     if (fest.id === 'diwali' && k % 3 === 0) { diya(ctx, x, yy + 5, 0.6, t, k); return; }
     if (fest.id === 'egghunt' && k % 4 === 0) { egg(ctx, x, yy + 5, 0.7, cols[(k >> 2) % cols.length], '#ffffff'); return; }
     const on = 0.5 + 0.5 * Math.sin(t * 3 + k * 1.7);
-    ctx.globalAlpha = 0.45 + on * 0.55; ell(ctx, x, yy + 1.5, 1.6, 2.4, cols[k % cols.length]); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.45 + on * 0.55; bulbOval(ctx, x, yy + 1.5, 1.6, 2.4, cols[k % cols.length]); ctx.globalAlpha = 1;
     if (tod.dark > 0.3 && k % 2 === 0) { const op = ctx.globalCompositeOperation; ctx.globalCompositeOperation = 'lighter'; glow(ctx, x, yy + 1.5, 7, '255,230,160', 0.35 * on); ctx.globalCompositeOperation = op; }
   });
   // an emblem on the sign
@@ -229,7 +254,7 @@ export function drawFestGarden(ctx, fest, t, tod, tint) {
       break;
     }
     case 'diwali':
-      rangoli(ctx, x, y - 4, 14, t);
+      rangoli(ctx, x, y - 4, 14);
       [[-16, -1], [16, -1], [0, -12], [-11, -9], [11, -9]].forEach(([dx, dy], k) => diya(ctx, x + dx, y + dy, 0.8, t, k));
       break;
     case 'hanukkah':
@@ -273,7 +298,7 @@ export class FestSky {
       for (const f of this.fireworks) {
         const r = 8 + f.t * 34; const a = Math.max(0, 1 - f.t / 1.6);
         ctx.fillStyle = f.col; ctx.globalAlpha = a;
-        for (let k = 0; k < 14; k++) { const ang = (k / 14) * Math.PI * 2; circ(ctx, f.x + Math.cos(ang) * r, f.y + Math.sin(ang) * r + f.t * f.t * 6, 1.6, f.col); }
+        for (let k = 0; k < 14; k++) { const ang = (k / 14) * Math.PI * 2; bulb(ctx, f.x + Math.cos(ang) * r, f.y + Math.sin(ang) * r + f.t * f.t * 6, 1.6, f.col); }
       }
       ctx.restore();
     }

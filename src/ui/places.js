@@ -31,10 +31,14 @@ const UMBER_LINES = [
 ];
 
 // Live-updating modal body: `render` is called now and every 250 ms while the modal is open.
+// (The timer starts first, so a render that closes the dialog straight away also stops it.)
 function live(body, render) {
   let iv = null;
   return {
-    onOpen: (hd) => { render(hd); iv = setInterval(() => render(hd), 250); },
+    onOpen: (hd) => {
+      iv = setInterval(() => { if (hd.closed) clearInterval(iv); else render(hd); }, 250);
+      render(hd);
+    },
     onClose: () => clearInterval(iv),
   };
 }
@@ -138,7 +142,7 @@ export const placeScreens = {
           { label: 'Finish now <span class="ico ico-cheese"></span> <span data-c></span>', cls: 'gold', onClick: () => { const c = Math.max(1, Math.ceil(g.wingRemaining(id) / 120)); if (!g.spendCheese(c)) { toast('Not enough golden cheese'); sfx.error(); return false; } st.buildEnd = Date.now(); return true; } },
         ],
         ...live(body, (hd) => {
-          if (st.built) { closeModal(); return; }
+          if (st.built) { hd.close(); return; }
           body.querySelector('[data-t]').textContent = `⏳ ${fmtTime(g.wingRemaining(id))}`;
           const c = hd?.el.querySelector('[data-c]'); if (c) c.textContent = Math.max(1, Math.ceil(g.wingRemaining(id) / 120));
         }),
@@ -363,7 +367,7 @@ export const placeScreens = {
           { label: 'Open now <span class="ico ico-cheese"></span> <span data-c></span>', cls: 'gold', onClick: () => { if (!g.finishBizCheese(id)) { toast('Not enough golden cheese'); sfx.error(); return false; } return true; } },
         ],
         ...live(body, (hd) => {
-          if (st.built) { closeModal(); return; }
+          if (st.built) { hd.close(); return; }
           body.querySelector('[data-t]').textContent = `⏳ ${fmtTime(g.bizRemaining(id))}`;
           const cc = hd?.el.querySelector('[data-c]'); if (cc) cc.textContent = g.cheeseForBiz(id);
         }),
@@ -468,7 +472,7 @@ export const placeScreens = {
           { label: 'Finish now <span class="ico ico-cheese"></span> <span data-c></span>', cls: 'gold', onClick: () => { if (!g.finishJobCheese(job)) { toast('Not enough golden cheese'); sfx.error(); return false; } return true; } },
         ],
         ...live(body, (hd) => {
-          if (!s.deep.jobs.includes(job)) { closeModal(); return; }
+          if (!s.deep.jobs.includes(job)) { hd.close(); return; }
           body.querySelector('[data-t]').textContent = `⏳ ${fmtTime(g.jobRemaining(job))}`;
           const cc = hd?.el.querySelector('[data-c]'); if (cc) cc.textContent = g.cheeseForJob(job);
         }),
